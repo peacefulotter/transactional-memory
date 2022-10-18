@@ -29,6 +29,64 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "batcher.h"
+
+typedef struct shared_mem shared_mem;
+typedef struct shared_mem_segment shared_mem_segment;
+typedef struct shared_mem_word shared_mem_word;
+typedef struct access_set_t access_set_t;
+typedef struct transaction transaction;
+
+struct access_set_t // TODO: not linked-list
+{
+    tx_t tx;
+    access_set_t* next;
+};
+
+struct shared_mem_word 
+{
+    bool ctrl_valid; // 0 -> A, 1 -> B; which copy is valid
+    bool ctrl_written; // Whether the word has been written in the current epoch
+    access_set_t* ctrl_access_set; // set read-write transaction(s) which have accessed the word in the current epoch.
+    size_t ctrl_nb_accessed; // size of access_set
+
+    void* readCopy; 
+    void* writeCopy;
+};
+
+struct shared_mem_segment
+{
+    batcher* batcher;
+    size_t nb_words;
+    shared_mem_word* words; // ARRAY
+};
+
+struct shared_mem
+{
+    size_t size;
+    size_t align;
+
+    size_t segments_nb; // number of segments allocated
+    shared_mem_segment** segments;
+    /**
+     *             segments**
+     *             /    |    \
+     *         s_0*    s_1*   s_2*
+     *          |       |      | 
+     *         w[]     w[]    w[]
+     */
+};
+
+// TODO assign a transaction to a segment
+struct transaction
+{
+    bool read_only;
+    size_t id; 
+};
+
+static const tx_t read_only_tx  = UINTPTR_MAX - 10;
+static const tx_t read_write_tx = UINTPTR_MAX - 11;
+
 // -------------------------------------------------------------------------- //
 
 typedef void* shared_t; // The type of a shared memory region
