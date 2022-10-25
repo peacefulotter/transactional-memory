@@ -37,10 +37,21 @@ typedef struct shared_mem_word shared_mem_word;
 typedef struct access_set_t access_set_t;
 typedef struct transaction transaction;
 
-struct access_set_t // TODO: not linked-list
+struct transaction
 {
-    tx_t tx;
-    access_set_t* next;
+    bool read_only;
+    size_t id; 
+};
+
+// The “access set” of read-write transaction(s) which have accessed the word in the current epoch.
+// Do not implement an actual set in any (optimized) implementation: this set will only be used to tell
+// whether a transaction can write to the word. Namely, if at least one other transaction has accessed
+// (i.e. read or written) this word in the same epoch, the write cannot happen. Said differently, if two
+// transactions are in the access set, it doesn’t matter which one they are.
+typedef struct access_set_t
+{
+    size_t size;
+    transaction* set;
 };
 
 struct shared_mem_word 
@@ -56,7 +67,6 @@ struct shared_mem_word
 
 struct shared_mem_segment
 {
-    batcher* batcher;
     size_t nb_words;
     shared_mem_word* words; // ARRAY
 };
@@ -66,26 +76,12 @@ struct shared_mem
     size_t size;
     size_t align;
 
+    batcher* batcher;
+
     size_t segments_nb; // number of segments allocated
-    shared_mem_segment** segments;
-    /**
-     *             segments**
-     *             /    |    \
-     *         s_0*    s_1*   s_2*
-     *          |       |      | 
-     *         w[]     w[]    w[]
-     */
+    shared_mem_segment* segments;
 };
 
-// TODO assign a transaction to a segment
-struct transaction
-{
-    bool read_only;
-    size_t id; 
-};
-
-static const tx_t read_only_tx  = UINTPTR_MAX - 10;
-static const tx_t read_write_tx = UINTPTR_MAX - 11;
 
 // -------------------------------------------------------------------------- //
 
@@ -98,6 +94,8 @@ static shared_t const invalid_shared = NULL; // Invalid shared memory region
 // structure).
 typedef uintptr_t tx_t; // The type of a transaction identifier
 static tx_t const invalid_tx = ~((tx_t) 0); // Invalid transaction constant
+// static const tx_t read_only_tx  = UINTPTR_MAX - 10;
+// static const tx_t read_write_tx = UINTPTR_MAX - 11;
 
 typedef int alloc_t;
 static alloc_t const success_alloc = 0; // Allocation successful and the TX can continue
