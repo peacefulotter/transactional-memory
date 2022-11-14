@@ -28,60 +28,45 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdatomic.h>
 
 #include "batcher.h"
 
-typedef struct shared_mem shared_mem;
-typedef struct shared_mem_segment shared_mem_segment;
-typedef struct shared_mem_word shared_mem_word;
-typedef struct access_set_t access_set_t;
-typedef struct transaction transaction;
+// cd grading  
+// make build-libs run
 
-struct transaction
+typedef struct shared_mem shared_mem;
+typedef struct shared_mem_word shared_mem_word;
+typedef struct transaction_t transaction_t;
+typedef struct shared_mem_word* shared_mem_segment;
+typedef struct transaction_t** access_set_t;
+
+struct transaction_t
 {
     bool read_only;
-    size_t id; 
-};
-
-// The “access set” of read-write transaction(s) which have accessed the word in the current epoch.
-// Do not implement an actual set in any (optimized) implementation: this set will only be used to tell
-// whether a transaction can write to the word. Namely, if at least one other transaction has accessed
-// (i.e. read or written) this word in the same epoch, the write cannot happen. Said differently, if two
-// transactions are in the access set, it doesn’t matter which one they are.
-typedef struct access_set_t
-{
-    size_t size;
-    transaction* set;
+    shared_mem_segment** seg_free_vec;
+    shared_mem_word** written_word_vec;
 };
 
 struct shared_mem_word 
 {
-    bool ctrl_valid; // 0 -> A, 1 -> B; which copy is valid
-    bool ctrl_written; // Whether the word has been written in the current epoch
-    access_set_t* ctrl_access_set; // set read-write transaction(s) which have accessed the word in the current epoch.
-    size_t ctrl_nb_accessed; // size of access_set
+    atomic_bool ctrl_valid; // 0 -> A, 1 -> B; which copy is valid TODO: delete this?
+    atomic_bool ctrl_written; // Whether the word has been written in the current epoch
+    access_set_t ctrl_access_set; // set read-write transaction(s) which have accessed the word in the current epoch.
 
     void* readCopy; 
     void* writeCopy;
 };
 
-struct shared_mem_segment
-{
-    size_t nb_words;
-    shared_mem_word* words; // ARRAY
-};
-
 struct shared_mem
 {
-    size_t size;
     size_t align;
 
     batcher* batcher;
 
-    size_t segments_nb; // number of segments allocated
-    shared_mem_segment* segments;
+    size_t* segment_sizes_vec;
+    shared_mem_segment* segments_vec;
 };
-
 
 // -------------------------------------------------------------------------- //
 
