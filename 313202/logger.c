@@ -24,6 +24,7 @@
 #include "logger.h"
 
 #define MAX_CALLBACKS 32
+#define LOG_USE_COLOR true
 
 typedef struct {
   log_LogFn fn;
@@ -56,12 +57,12 @@ static void stdout_callback(log_Event *ev) {
   buf[strftime(buf, sizeof(buf), "%H:%M:%S", ev->time)] = '\0';
 #ifdef LOG_USE_COLOR
   fprintf(
-    ev->udata, "%s %s%-5s\x1b[0m \x1b[90m%s:%d:\x1b[0m ",
+    ev->udata, "\n%s %s%-5s\x1b[0m \x1b[90m%s:%d:\x1b[0m ",
     buf, level_colors[ev->level], level_strings[ev->level],
     ev->file, ev->line);
 #else
   fprintf(
-    ev->udata, "\n%s %-5s %s:%d: ",
+    ev->udata, "%s %-5s %s:%d: ",
     buf, level_strings[ev->level], ev->file, ev->line);
 #endif
   vfprintf(ev->udata, ev->fmt, ev->ap);
@@ -72,7 +73,7 @@ static void stdout_callback(log_Event *ev) {
 
 static void file_callback(log_Event *ev) {
   char buf[64];
-  buf[strftime(buf, sizeof(buf), "\n%Y-%m-%d %H:%M:%S", ev->time)] = '\0';
+  buf[strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", ev->time)] = '\0';
   fprintf(
     ev->udata, "%s %-5s %s:%d: ",
     buf, level_strings[ev->level], ev->file, ev->line);

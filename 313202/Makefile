@@ -28,7 +28,7 @@ LDLIBS   :=
 
 build: $(BIN)
 clean:
-	$(RM) $(OBJS) $(BIN)
+	$(x) $(OBJS) $(BIN)
 
 define BUILD_C
 %.$(1).o: %.$(1) $$(HDRS_C) Makefile

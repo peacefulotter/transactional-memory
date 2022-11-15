@@ -35,10 +35,13 @@
 // cd grading  
 // make build-libs run
 
+#define MAX_SEGMENTS 2 << 16
+#define MAX_WORDS 2 << 48
+
 typedef struct shared_mem shared_mem;
 typedef struct shared_mem_word shared_mem_word;
+typedef struct shared_mem_segment shared_mem_segment;
 typedef struct transaction_t transaction_t;
-typedef struct shared_mem_word* shared_mem_segment;
 typedef struct transaction_t** access_set_t;
 
 struct transaction_t
@@ -58,14 +61,21 @@ struct shared_mem_word
     void* writeCopy;
 };
 
+struct shared_mem_segment
+{
+    size_t size;
+    shared_mem_word* words;
+};
+
+
 struct shared_mem
 {
     size_t align;
 
     batcher* batcher;
 
-    size_t* segment_sizes_vec;
-    shared_mem_segment* segments_vec;
+    atomic_int allocated_segments;
+    shared_mem_segment segments[MAX_SEGMENTS];
 };
 
 // -------------------------------------------------------------------------- //
