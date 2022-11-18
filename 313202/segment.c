@@ -4,14 +4,13 @@
 #include "word.h"
 #include "access_set.h"
 #include "logger.h"
+#include "virtual.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 
 int segment_alloc(shared_mem* mem, size_t size)
 {
-    printf("--- alloc_new_segment start, size: %zu \n", size);
-
     // create new mem segment
     shared_mem_segment* segment = malloc(sizeof(shared_mem_segment));
     if ( segment == NULL )
@@ -42,26 +41,18 @@ int segment_alloc(shared_mem* mem, size_t size)
     }
 
     mem->segments[mem->allocated_segments++] = *segment;
-
-    printf("--- alloc_new_segment stop\n");
     return 0;
 }
 
 size_t get_segment_index( void const* addr )
 {
-    size_t s = *((size_t*) addr);
-    size_t seg_index = s >> 48 - 1;
-    log_info("addr: %p, seg_index: %zu", addr, seg_index);
-    return seg_index;
+    return (size_t) SEG_INDEX((uintptr_t) addr);
 }
 
 
 size_t get_word_index( void const* addr )
 {
-    size_t s = *((size_t*) addr);
-    size_t word_index = s & 0xFFFF;
-    log_info("addr: %p, word_index: %zu", addr, word_index);
-    return word_index;
+    return (size_t) WORD_INDEX((uintptr_t) addr);
 }
 
 

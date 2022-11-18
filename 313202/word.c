@@ -15,11 +15,7 @@ shared_mem_word* word_init(size_t align)
     if ( unlikely(word == NULL) )
         return NULL;
 
-    atomic_init(&word->ctrl_written, 0);
-    atomic_init(&word->ctrl_valid, false);
-    atomic_init(&word->ctrl_written , false);
-
-    word->ctrl_access_set = vector_create();
+    word->access_set = as_init();
     word->readCopy = calloc(1, align);
     word->writeCopy = calloc(1, align);
 
@@ -28,14 +24,18 @@ shared_mem_word* word_init(size_t align)
 
 void word_free(shared_mem_word word)
 {
-    as_release(word.ctrl_access_set);
+    free(word.readCopy);
+    free(word.writeCopy);
+    word.readCopy = NULL;
+    word.writeCopy = NULL;
 }
 
-void word_print(shared_mem_word word)
+void word_print(transaction_t* tx, shared_mem_word word)
 {
     log_debug(
-        "valid=%d, written=%d, readCopy=(%p, %zu), writeCopy=(%p, %zu)", 
-         atomic_load(&word.ctrl_valid), atomic_load(&word.ctrl_written), word.readCopy, *((size_t*) word.readCopy), word.writeCopy, *((size_t*) word.writeCopy)
+        "readCopy=(%p, %zu), writeCopy=(%p, %zu), access=(%zu, %p)", 
+        word.readCopy, *((size_t*) word.readCopy), 
+        word.writeCopy, *((size_t*) word.writeCopy),
+        atomic_load(&word.access_set->state), atomic_load(&word.access_set->tx)
     );
-    as_print(word.ctrl_access_set);
 }

@@ -42,7 +42,9 @@ typedef struct shared_mem shared_mem;
 typedef struct shared_mem_word shared_mem_word;
 typedef struct shared_mem_segment shared_mem_segment;
 typedef struct transaction_t transaction_t;
-typedef struct transaction_t** access_set_t;
+typedef struct access_set_t access_set_t;
+
+// TODO atomic_fast??
 
 struct transaction_t
 {
@@ -51,11 +53,15 @@ struct transaction_t
     shared_mem_word** written_word_vec;
 };
 
+struct access_set_t
+{
+    atomic_char state;
+    atomic_uintptr_t tx;
+};
+
 struct shared_mem_word 
 {
-    atomic_bool ctrl_valid; // 0 -> A, 1 -> B; which copy is valid TODO: delete this?
-    atomic_bool ctrl_written; // Whether the word has been written in the current epoch
-    access_set_t ctrl_access_set; // set read-write transaction(s) which have accessed the word in the current epoch.
+    access_set_t* access_set; // set read-write transaction(s) which have accessed the word in the current epoch.
 
     void* readCopy; 
     void* writeCopy;
