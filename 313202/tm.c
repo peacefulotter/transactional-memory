@@ -177,6 +177,8 @@ bool swap(void *a, void *b, size_t width)
 
 bool commit( shared_mem* mem, transaction_t* tx )
 {
+    // TODO: no vector
+
     // swap written words
     size_t write_size = vector_size(mem->written_word_vec);
     log_info("[%p]  commit  start, written word=%zu", tx, write_size);
@@ -236,23 +238,21 @@ bool tm_end(shared_t shared, tx_t tx) {
 
 bool read_word(shared_mem_word w, void* read_to, transaction_t* tx, size_t word_size)
 {
+    // lock barrier no matter what?
     if ( tx->read_only )
-    {
         memcpy(read_to, w.readCopy, word_size);
-        return true;
-    }
-    
-    else if ( as_read_op(&w.access_set, tx) )
+    else
     {
-        char state = atomic_load(&w.access_set);
+        char state = as_read_op(&w.access_set, tx);
+        if ( state == INVALID_STATE )
+            return false;
         if ( state == WRITE_STATE )
             memcpy(read_to, w.writeCopy, word_size);
         else if ( state == READ_STATE || state == DOUBLE_READ_STATE )
             memcpy(read_to, w.readCopy, word_size);
-        return true;
     }
 
-    return false;
+    return true;
 }
 
 
@@ -284,7 +284,9 @@ bool tm_read(shared_t shared, tx_t tx, void const* source, size_t size, void* ta
             log_error(" [%p] read failed", tx);
             return false;
         }
-        vector_add(&mem->read_word_vec, seg.words + index);
+
+        if ( !transaction->read_only )
+            vector_add(&mem->read_word_vec, seg.words + index);
     }
 
     return true;

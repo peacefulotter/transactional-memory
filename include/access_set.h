@@ -17,7 +17,7 @@
 #define as_extract_state(as) (((size_t) as) & 0xFF)
 
 bool as_contains(access_set_t* as, transaction_t* tx );
-bool as_read_op(access_set_t* as, transaction_t* tx);
+char as_read_op(access_set_t* as, transaction_t* tx);
 bool as_write_op(access_set_t* as, transaction_t* tx);
 void as_reset(access_set_t* as);
 void as_print(transaction_t* tx, access_set_t* as);
