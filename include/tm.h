@@ -30,11 +30,6 @@
 #include <stdint.h>
 #include <stdatomic.h>
 
-#include "batcher.h"
-
-// cd grading  
-// make build-libs run
-
 #define MAX_SEGMENTS 2 << 16
 #define MAX_WORDS 2 << 48
 
@@ -42,26 +37,28 @@ typedef struct shared_mem shared_mem;
 typedef struct shared_mem_word shared_mem_word;
 typedef struct shared_mem_segment shared_mem_segment;
 typedef struct transaction_t transaction_t;
-typedef struct access_set_t access_set_t;
+typedef struct batcher batcher;
+typedef atomic_size_t access_set_t;
 
-// TODO atomic_fast??
+struct batcher
+{
+    size_t counter;
+    size_t remaining;
+    size_t nb_blocked;
+
+    struct lock_t* mutex;
+    struct lock_t* round_lock;
+};
 
 struct transaction_t
 {
     bool read_only;
     shared_mem_segment** seg_free_vec;
-    shared_mem_word** written_word_vec;
-};
-
-struct access_set_t
-{
-    atomic_char state;
-    atomic_uintptr_t tx;
 };
 
 struct shared_mem_word 
 {
-    access_set_t* access_set; // set read-write transaction(s) which have accessed the word in the current epoch.
+    access_set_t access_set;
 
     void* readCopy; 
     void* writeCopy;
@@ -70,7 +67,7 @@ struct shared_mem_word
 struct shared_mem_segment
 {
     size_t size;
-    shared_mem_word* words;
+    shared_mem_word* words; // TODO: shared_mem_word words[MAX_WORDS]
 };
 
 
@@ -79,6 +76,9 @@ struct shared_mem
     size_t align;
 
     batcher* batcher;
+
+    shared_mem_word** read_word_vec; // TODO: MAX_MODIFIED
+    shared_mem_word** written_word_vec;
 
     atomic_int allocated_segments;
     shared_mem_segment segments[MAX_SEGMENTS];

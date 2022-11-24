@@ -101,6 +101,14 @@ void _vector_remove(vector* vec_addr, vec_type_t type_size, vec_size_t pos)
 	_vector_erase(vec_addr, type_size, pos, 1);
 }
 
+void vector_clear(vector vec)
+{
+	vector_data* v_data = vector_get_data(vec);
+	memset(v_data->buff, 0, v_data->length);
+	v_data->length = 0;
+	v_data->alloc = 0;
+}
+
 void vector_pop(vector vec) { --vector_get_data(vec)->length; }
 
 vector _vector_copy(vector vec, vec_type_t type_size)

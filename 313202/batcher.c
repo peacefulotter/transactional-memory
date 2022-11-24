@@ -1,11 +1,10 @@
 #include <stdlib.h>
-#include <stdatomic.h>
 
 #include "macros.h"
 #include "batcher.h"
 #include "lock.h"
-#include "vec.h"
 #include "logger.h"
+#include "tm.h"
 
 batcher* get_batcher()
 {
@@ -14,19 +13,21 @@ batcher* get_batcher()
 
     b->counter = 0;
     b->remaining = 0;
+    b->nb_blocked = 0;
 
-    b->blocked = vector_create();
-    if ( unlikely( b->blocked == NULL ) )
+    b->round_lock = malloc(sizeof(struct lock_t));
+    if ( unlikely( !lock_init(b->round_lock) ) )
     {
+        free(b->round_lock);
         free(b);
         return NULL;
     }
 
-    b->lock = malloc(sizeof(struct lock_t));
-    if ( unlikely( !lock_init(b->lock) ) )
+    b->mutex = malloc(sizeof(struct lock_t));
+    if ( unlikely( !lock_init(b->mutex) ) )
     {
-        lock_cleanup(b->lock);
-        free(b->blocked);
+        lock_cleanup(b->round_lock);
+        free(b->round_lock);
         free(b);
         return NULL;
     }
@@ -37,51 +38,78 @@ batcher* get_batcher()
 //TODO: why?
 size_t batcher_epoch(batcher* batch)
 {
-    return atomic_load(&batch->counter);
+    return batch->counter;
 }
 
-void batcher_enter(batcher* b)
+void batcher_enter(batcher* b, transaction_t* tx)
 {
-    // TODO: thread[] to tx[]
-    // TODO: if counter == 0, let everyone in
-    size_t zero = 0;
-    bool first = atomic_compare_exchange_strong(&b->remaining, &zero, 1);
-    log_info("  batch_enter  first=%u, thread=%zu", first, pthread_self());
-    if ( !first )
+    lock_acquire(b->mutex);
+
+    // TODO: per thread not per tx 
+
+    bool first = b->remaining == 0;
+    log_info("[%p]  batch_enter  first=%u", tx, first);
+    if ( first )
+        b->remaining = 1;
+    else
     {
-        // TODO: atomic array
-        vector_add(&b->blocked, pthread_self());
-        lock_acquire(b->lock);
-        lock_wait(b->lock);
+        b->nb_blocked++;
+        size_t epoch = batcher_epoch(b);
+        lock_release(b->mutex);
+        lock_acquire(b->round_lock);
+        while ( true )
+        {
+            lock_wait(b->round_lock);
+            lock_acquire(b->mutex);
+            if ( epoch != batcher_epoch(b) ) break;
+            lock_release(b->mutex);
+        }
+        log_info("[%p]  batch_enter  ENTERING ", tx);
+        lock_release(b->round_lock);
     }
-    log_info("  batch_enter  - end  first=%u, thread=%zu", first, pthread_self());
+    log_info("[%p]  batch_enter  - end  first=%u, thread=%zu", tx, first);
+    
+    lock_release(b->mutex);
 }
 
 /**
  * @brief returns true if last tx to leave 
  */
-bool batcher_leave(batcher* b)
+bool batcher_leave(batcher* b, transaction_t* tx)
 {
-    size_t one = 1;
-    size_t nb_blocked = vector_size(b->blocked);
-    bool none_remaining = atomic_compare_exchange_strong(&b->remaining, &one, nb_blocked);
-    log_info("  batch_leave  none_remaining=%u", none_remaining);
+    lock_acquire(b->mutex);
+    bool last_remaining = b->remaining == 1;
+    log_info("[%p]  batch_leave  remaining=%u", tx, b->remaining);
+    lock_release(b->mutex);
+    return last_remaining;
+}
 
-    if ( none_remaining )
-    {
-        atomic_fetch_add(&b->counter, 1);
-        lock_release(b->lock);
-        lock_wake_up(b->lock); 
-        for (size_t i = 0; i < nb_blocked; i++)
-            vector_remove(&b->remaining, i);
-    }
-    return none_remaining;
+void batcher_wake_up(batcher* b)
+{
+    lock_acquire(b->mutex);
+    log_info("          batch_leave  waking_up others");
+    b->remaining = b->nb_blocked;
+    b->nb_blocked = 0;
+    b->counter++;
+    lock_release(b->mutex);
+    lock_wake_up(b->round_lock);
 }
 
 void batcher_free(batcher* b)
 {
-    lock_cleanup(b->lock);
-    vector_free(b->blocked);
-    b->blocked = NULL;
+    lock_cleanup(b->round_lock);
+    lock_cleanup(b->mutex);
     free(b);
+}
+
+void _batcher_print(batcher* b, transaction_t* tx)
+{
+    log_info("[%p] epoch=%zu, nb_blocked=%zu, remaining=%zu", tx, b->counter, b->nb_blocked, b->remaining);
+}
+
+void batcher_print(batcher* b)
+{
+    lock_acquire(b->mutex);
+    _batcher_print(b, NULL);
+    lock_release(b->mutex);
 }

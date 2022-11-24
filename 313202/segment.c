@@ -1,4 +1,5 @@
 
+#include "macros.h"
 #include "vec.h"
 #include "segment.h"
 #include "word.h"
@@ -17,9 +18,9 @@ int segment_alloc(shared_mem* mem, size_t size)
         return 1;
 
     segment->size = size;
-    segment->words = calloc(size, mem->align); 
+    segment->words = calloc(size, sizeof(shared_mem_word)); 
     
-    if ( segment->words == NULL )
+    if ( unlikely( segment->words == NULL ) )
     {
         free(segment);
         return 1;
@@ -29,12 +30,12 @@ int segment_alloc(shared_mem* mem, size_t size)
     for (size_t i = 0; i < size; i++)
     {
         shared_mem_word* word = word_init(mem->align);
-        if ( word == NULL )
+        if ( unlikely( word == NULL ) )
         {
-            for (long j = i - 1; j >= 0; j--)
+            for (long j = i; j >= 0; j--)
                 word_free(segment->words[j]);
-            free( segment->words );
-            free( segment );
+            free(segment->words);
+            free(segment);
             return 1;
         }
         segment->words[i] = *word;

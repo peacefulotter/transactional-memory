@@ -1,4 +1,6 @@
 
+#pragma once
+
 #include "tm.h"
 
 #define _POSIX_C_SOURCE 200809L

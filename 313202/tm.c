@@ -30,16 +30,13 @@
 // Internal headers
 #include "tm.h"
 #include "macros.h"
-#include "access_set.h"
 #include "word.h"
 #include "batcher.h"
 #include "vec.h"
 #include "segment.h"
 #include "logger.h"
 #include "virtual.h"
-
-// TODO: compare and swap
-// TODO: batcher atomic?
+#include "access_set.h"
 
 bool read_word(shared_mem_word word, void* read_to, transaction_t* tx, size_t word_size);
 bool write_word(shared_mem_word word, const void* write_from, transaction_t* tx, size_t word_size);
@@ -58,8 +55,8 @@ void print_mem(shared_mem* mem)
             word_print(NULL, s.words[j]);
         log_debug("----------------------");
     }
+    batcher_print(mem->batcher);
     log_debug("=====================================");
-    // mem->batcher;
 }
 
 
@@ -70,7 +67,7 @@ void print_mem(shared_mem* mem)
 **/
 shared_t tm_create(size_t size, size_t align) {
     
-    // log_set_quiet(true);
+    log_set_quiet(true);
 
     log_info("===== tm_create start size: %zu, align: %zu", size, align);
     shared_mem* mem = malloc(sizeof(shared_mem));
@@ -79,6 +76,8 @@ shared_t tm_create(size_t size, size_t align) {
 
     mem->align = align;
     mem->allocated_segments = 0;
+    mem->written_word_vec = vector_create();
+    mem->read_word_vec = vector_create();
 
     mem->batcher = get_batcher();
     if ( mem->batcher == NULL )
@@ -157,17 +156,15 @@ tx_t tm_begin(shared_t shared, bool is_ro)
 
     tx->read_only = is_ro;
     tx->seg_free_vec = vector_create();
-    tx->written_word_vec = vector_create();
 
-    // TODO: not per tx but per thread 
-    // batcher.blocked => vector to set
-    batcher_enter(mem->batcher);
+    batcher_enter(mem->batcher, tx);
 
     return (tx_t) tx;
 }
 
 bool swap(void *a, void *b, size_t width)
 {
+    // TODO: only write to readCopy
     void *temp = malloc(width);
     if ( temp == NULL ) return false;
     memcpy(temp, b, width);
@@ -180,20 +177,27 @@ bool swap(void *a, void *b, size_t width)
 
 bool commit( shared_mem* mem, transaction_t* tx )
 {
-    log_info("[%p]  commit  start", tx);
-
-    size_t s = vector_size(tx->written_word_vec);
-    for (size_t i = 0; i < s; i++)
+    // swap written words
+    size_t write_size = vector_size(mem->written_word_vec);
+    log_info("[%p]  commit  start, written word=%zu", tx, write_size);
+    for (size_t i = 0; i < write_size; i++)
     {
-        shared_mem_word* w = tx->written_word_vec[i];
+        shared_mem_word* w = mem->written_word_vec[i];
         if ( !swap(w->readCopy, w->writeCopy, mem->align) )
             return false;
-
-        // 3 -> 0 if word written
-        char write_state = WRITE_STATE;
-        atomic_compare_exchange_strong(&w->access_set->state, &write_state, INIT_STATE);
+        as_reset(&w->access_set);
     }
-    vector_free(tx->written_word_vec); 
+    vector_clear(mem->written_word_vec); 
+
+    // reset access set of read words
+    size_t read_size = vector_size(mem->read_word_vec);
+    log_info("[%p]  commit  part2, read word=%zu", tx, read_size);
+    for (size_t i = 0; i < read_size; i++)
+    {
+        shared_mem_word* w = mem->read_word_vec[i];
+        as_reset(&w->access_set);
+    }
+    vector_clear(mem->read_word_vec);
 
     log_info("[%p]  commit  end", tx);
     return true;
@@ -210,19 +214,21 @@ bool tm_end(shared_t shared, tx_t tx) {
     shared_mem* mem = (shared_mem*) shared;
     transaction_t* transaction = (transaction_t*) tx;
 
-
     // leave batcher - no more threads remaining => commit
     batcher* b = mem->batcher;
-    if ( batcher_leave(b) ) 
+    if ( batcher_leave(b, transaction) ) 
+    {
         commit(mem, transaction);
-        // TODO: also reset all words access_set to INIT_STATE
+        print_mem(mem);
+        batcher_wake_up(b);
+    }
 
     // free the segments 
+    // TODO: not sure about this
     size_t s = vector_size(transaction->seg_free_vec);
     for (size_t i = 0; i < s; i++)
         segment_free(*transaction->seg_free_vec[i]);
     vector_free(transaction->seg_free_vec);   
-
 
     log_info("[%p]  tm_end  end", tx);
     return true;
@@ -236,9 +242,9 @@ bool read_word(shared_mem_word w, void* read_to, transaction_t* tx, size_t word_
         return true;
     }
     
-    else if ( as_read_op(w.access_set, tx) )
+    else if ( as_read_op(&w.access_set, tx) )
     {
-        char state = atomic_load(&w.access_set->state);
+        char state = atomic_load(&w.access_set);
         if ( state == WRITE_STATE )
             memcpy(read_to, w.writeCopy, word_size);
         else if ( state == READ_STATE || state == DOUBLE_READ_STATE )
@@ -265,18 +271,20 @@ bool tm_read(shared_t shared, tx_t tx, void const* source, size_t size, void* ta
     size_t seg_index = get_segment_index(source);
     size_t word_index = get_word_index(source);
 
-    log_info("[%p]  tm_read  start (%zu, %zu)", tx, seg_index, word_index);
+    log_info(" [%p]  tm_read  start (%zu, %zu)", tx, seg_index, word_index);
 
     size_t a = mem->align;
     shared_mem_segment seg = mem->segments[seg_index];
     for (size_t offset = 0; offset < size / a; offset++)
     {
-        shared_mem_word word = seg.words[word_index + offset];
+        size_t index = word_index + offset;
+        shared_mem_word word = seg.words[index];
         if ( !read_word(word, target + offset * a, transaction, a) )
         {
-            log_error("[%p] read failed", tx);
+            log_error(" [%p] read failed", tx);
             return false;
         }
+        vector_add(&mem->read_word_vec, seg.words + index);
     }
 
     return true;
@@ -285,7 +293,7 @@ bool tm_read(shared_t shared, tx_t tx, void const* source, size_t size, void* ta
 
 bool write_word(shared_mem_word w, const void* src, transaction_t* tx, size_t word_size)
 {
-    if ( as_write_op(w.access_set, tx) )
+    if ( as_write_op(&w.access_set, tx) )
     {
         memcpy(w.writeCopy, src, word_size);
         return true;
@@ -310,20 +318,21 @@ bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size, void* t
     size_t seg_index = get_segment_index(target);
     size_t word_index = get_word_index(target); 
 
-    log_info("[%p]  tm_write  target: %p, (%zu, %zu), size: %zu", tx, target, seg_index, word_index, size);
+    log_info(" [%p]  tm_write  target: %p, (%zu, %zu), size: %zu", tx, target, seg_index, word_index, size);
 
     size_t a = mem->align;
     shared_mem_segment seg = mem->segments[seg_index];
     for (size_t offset = 0; offset < size / a; offset++)
     {
-        shared_mem_word word = seg.words[word_index + offset];
-        word_print(transaction, word);
+        size_t index = word_index + offset;
+        shared_mem_word word = seg.words[index];
         if ( !write_word(word, source + offset * a, transaction, a) ) 
         {
-            log_error("[%p] write failed", tx);
+            log_error(" [%p] write failed", tx);
             return false;
         }
-        vector_add(&transaction->written_word_vec, &word);
+        vector_add(&mem->written_word_vec, seg.words + index);
+        word_print(transaction, word);
     }
 
     return true;
@@ -337,7 +346,7 @@ bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size, void* t
  * @return Whether the whole transaction can continue (success/nomem), or not (abort_alloc)
 **/
 alloc_t tm_alloc(shared_t shared, tx_t tx, size_t size, void** target) {
-    log_debug("[%p]  tm_alloc  start", tx);
+    log_debug(" [%p]  tm_alloc  start", tx);
     shared_mem* mem = (shared_mem*) shared;
 
     if ( segment_alloc(mem, size) )
@@ -345,7 +354,7 @@ alloc_t tm_alloc(shared_t shared, tx_t tx, size_t size, void** target) {
 
     *target = SEG_ADDR(mem->allocated_segments);
 
-    log_debug("[%p]  tm_alloc  end, target=%p", tx, *target);
+    log_debug(" [%p]  tm_alloc  end, target=%p", tx, *target);
 
     return success_alloc;
 }
@@ -356,7 +365,7 @@ alloc_t tm_alloc(shared_t shared, tx_t tx, size_t size, void** target) {
  * @param target Address of the first byte of the previously allocated segment to deallocate
  * @return Whether the whole transaction can continue
 **/
-bool tm_free(shared_t shared, tx_t tx, void* target) {
+bool tm_free(shared_t unused(shared), tx_t tx, void* target) {
     log_debug("tm_free start\n");
 
     // shared_mem* mem = (shared_mem*) shared;

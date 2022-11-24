@@ -15,9 +15,20 @@ shared_mem_word* word_init(size_t align)
     if ( unlikely(word == NULL) )
         return NULL;
 
-    word->access_set = as_init();
+    word->access_set = 0;
     word->readCopy = calloc(1, align);
+    if ( word->readCopy == NULL )
+    {
+        free(word);
+        return NULL;
+    }
     word->writeCopy = calloc(1, align);
+    if ( word->writeCopy == NULL )
+    {
+        free(word);
+        free(word->readCopy);
+        return NULL;
+    }
 
     return word;
 }
@@ -32,10 +43,12 @@ void word_free(shared_mem_word word)
 
 void word_print(transaction_t* tx, shared_mem_word word)
 {
+    size_t s = atomic_load(&word.access_set);
     log_debug(
-        "readCopy=(%p, %zu), writeCopy=(%p, %zu), access=(%zu, %p)", 
+        "[%p] word_addr=%p, readCopy=(%p, %zu), writeCopy=(%p, %zu), access=(state=%zu, tx=%p)", 
+        tx, &word,
         word.readCopy, *((size_t*) word.readCopy), 
         word.writeCopy, *((size_t*) word.writeCopy),
-        atomic_load(&word.access_set->state), atomic_load(&word.access_set->tx)
+        as_extract_state(s), as_extract_tx(s)
     );
 }
