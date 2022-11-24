@@ -78,15 +78,16 @@ void batcher_enter(batcher* b, transaction_t* tx)
 bool batcher_leave(batcher* b, transaction_t* tx)
 {
     lock_acquire(b->mutex);
-    bool last_remaining = b->remaining == 1;
+    b->remaining--;
+    bool last_remaining = b->remaining == 0;
     log_info("[%p]  batch_leave  remaining=%u", tx, b->remaining);
-    lock_release(b->mutex);
+    if ( !last_remaining )
+        lock_release(b->mutex);
     return last_remaining;
 }
 
 void batcher_wake_up(batcher* b)
 {
-    lock_acquire(b->mutex);
     log_info("          batch_leave  waking_up others");
     b->remaining = b->nb_blocked;
     b->nb_blocked = 0;
@@ -102,14 +103,7 @@ void batcher_free(batcher* b)
     free(b);
 }
 
-void _batcher_print(batcher* b, transaction_t* tx)
-{
-    log_info("[%p] epoch=%zu, nb_blocked=%zu, remaining=%zu", tx, b->counter, b->nb_blocked, b->remaining);
-}
-
 void batcher_print(batcher* b)
 {
-    lock_acquire(b->mutex);
-    _batcher_print(b, NULL);
-    lock_release(b->mutex);
+    log_info("epoch=%zu, nb_blocked=%zu, remaining=%zu", b->counter, b->nb_blocked, b->remaining);
 }

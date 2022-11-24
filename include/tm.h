@@ -32,6 +32,8 @@
 
 #define MAX_SEGMENTS 2 << 16
 #define MAX_WORDS 2 << 48
+#define MAX_MODIFIED 2 << 10
+#define MAX_FREE_SEG 2 << 5
 
 typedef struct shared_mem shared_mem;
 typedef struct shared_mem_word shared_mem_word;
@@ -53,7 +55,8 @@ struct batcher
 struct transaction_t
 {
     bool read_only;
-    shared_mem_segment** seg_free_vec;
+    size_t seg_free_size;
+    shared_mem_segment* seg_free[MAX_FREE_SEG];
 };
 
 struct shared_mem_word 
@@ -67,7 +70,14 @@ struct shared_mem_word
 struct shared_mem_segment
 {
     size_t size;
-    shared_mem_word* words; // TODO: shared_mem_word words[MAX_WORDS]
+    shared_mem_word* words;
+};
+
+struct modified_words
+{
+    shared_mem_word* words[MAX_MODIFIED];
+    size_t size;
+    struct lock_t* lock;
 };
 
 
@@ -77,8 +87,8 @@ struct shared_mem
 
     batcher* batcher;
 
-    shared_mem_word** read_word_vec; // TODO: MAX_MODIFIED
-    shared_mem_word** written_word_vec;
+    struct modified_words modif_read; 
+    struct modified_words modif_write;
 
     atomic_int allocated_segments;
     shared_mem_segment segments[MAX_SEGMENTS];
