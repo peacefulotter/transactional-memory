@@ -10,39 +10,35 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-int segment_alloc(shared_mem* mem, size_t size)
+bool segment_alloc(shared_mem* mem, size_t size)
 {
-    // create new mem segment
-    shared_mem_segment* segment = malloc(sizeof(shared_mem_segment));
-    if ( segment == NULL )
-        return 1;
+    shared_mem_segment seg; 
 
-    segment->size = size;
-    segment->words = calloc(size, sizeof(shared_mem_word)); 
+    seg.size = size;
+    seg.access_sets = calloc(size, sizeof(access_set_t)); 
+    seg.writeCopies = calloc(size, sizeof(void*)); 
+    seg.readCopies = calloc(size, sizeof(void*)); 
     
-    if ( unlikely( segment->words == NULL ) )
+    if ( unlikely( 
+        seg.access_sets == NULL || 
+        seg.writeCopies == NULL || 
+        seg.readCopies == NULL 
+    ) )
     {
-        free(segment);
-        return 1;
+        free(seg.access_sets);
+        free(seg.writeCopies);
+        free(seg.readCopies);
+        return true;
     }
 
-    // initialize each word
     for (size_t i = 0; i < size; i++)
     {
-        shared_mem_word* word = word_init(mem->align);
-        if ( unlikely( word == NULL ) )
-        {
-            for (long j = i; j >= 0; j--)
-                word_free(segment->words[j]);
-            free(segment->words);
-            free(segment);
-            return 1;
-        }
-        segment->words[i] = *word;
+        seg.writeCopies[i] = calloc(1, mem->align);
+        seg.readCopies[i] = calloc(1, mem->align);
     }
 
-    mem->segments[mem->allocated_segments++] = *segment;
-    return 0;
+    mem->segments[mem->allocated_segments++] = seg;
+    return false;
 }
 
 size_t get_segment_index( void const* addr )
@@ -59,6 +55,7 @@ size_t get_word_index( void const* addr )
 
 void segment_free(shared_mem_segment seg)
 {
-    for (size_t i = 0; i < seg.size; i++)
-        word_free(seg.words[i]);
+    free(seg.access_sets);
+    free(seg.writeCopies);
+    free(seg.readCopies);
 }

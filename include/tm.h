@@ -36,7 +36,6 @@
 #define MAX_FREE_SEG 2 << 5
 
 typedef struct shared_mem shared_mem;
-typedef struct shared_mem_word shared_mem_word;
 typedef struct shared_mem_segment shared_mem_segment;
 typedef struct transaction_t transaction_t;
 typedef struct batcher batcher;
@@ -59,23 +58,19 @@ struct transaction_t
     shared_mem_segment* seg_free[MAX_FREE_SEG];
 };
 
-struct shared_mem_word 
-{
-    access_set_t access_set;
-
-    void* readCopy; 
-    void* writeCopy;
-};
-
 struct shared_mem_segment
 {
     size_t size;
-    shared_mem_word* words;
+
+    access_set_t* access_sets;
+    void** readCopies; 
+    void** writeCopies;
 };
 
 struct modified_words
 {
-    shared_mem_word* words[MAX_MODIFIED];
+    size_t segment_indices[MAX_MODIFIED];
+    size_t word_indices[MAX_MODIFIED];
     size_t size;
     struct lock_t* lock;
 };

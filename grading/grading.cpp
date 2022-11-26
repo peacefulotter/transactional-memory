@@ -269,8 +269,8 @@ int main(int argc, char** argv) {
         //     return static_cast<size_t>(res);
         // }();
         // auto const nbtxperwrk    = 200000ul / nbworkers;
-        auto const nbworkers = 4;
-        auto const nbtxperwrk    = 10ul;
+        auto const nbworkers = 8;
+        auto const nbtxperwrk    = 1000ul;
 
         auto const nbaccounts    = 32 * nbworkers;
         auto const expnbaccounts = 256 * nbworkers;
