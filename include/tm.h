@@ -30,6 +30,8 @@
 #include <stdint.h>
 #include <stdatomic.h>
 
+#include "shared-lock.h"
+
 #define MAX_SEGMENTS 2 << 16
 #define MAX_WORDS 2 << 48
 #define MAX_MODIFIED 2 << 10
@@ -46,6 +48,8 @@ struct batcher
     size_t counter;
     size_t remaining;
     size_t nb_blocked;
+
+    // struct shared_lock_t lock;
 
     struct lock_t* mutex;
     struct lock_t* round_lock;

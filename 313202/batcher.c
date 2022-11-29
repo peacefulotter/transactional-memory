@@ -51,9 +51,10 @@ bool pred(batcher* b, transaction_t* tx, size_t epoch)
 
 void batcher_enter(batcher* b, transaction_t* tx)
 {
+    // TODO: READ_WRITE LOCK = shared_lock
     lock_acquire(b->mutex);
 
-    // TODO: per thread not per tx 
+    // TODO:  LAISSEZ ENTRER JUSQU'A FIN READ ONLY
 
     bool first = b->remaining == 0;
     log_info("[%p]  batch_enter  first=%u", tx, first);
@@ -64,7 +65,7 @@ void batcher_enter(batcher* b, transaction_t* tx)
         lock_acquire(b->round_lock);
         while ( pred(b, tx, epoch) )
         {
-            log_error("[%p]  batch_enter  WAITING on=%zu", tx, epoch);
+            log_error("[%p]  batch_enter  WAITING on epoch=%zu", tx, epoch);
             lock_wait(b->round_lock);
         }
         lock_release(b->round_lock);
