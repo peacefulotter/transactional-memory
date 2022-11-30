@@ -1,37 +1,47 @@
 #include <stdlib.h>
+#include <stdatomic.h>
 
 #include "macros.h"
 #include "batcher.h"
 #include "lock.h"
+#include "shared-lock.h"
 #include "logger.h"
 #include "tm.h"
 
 batcher* get_batcher()
 {
     batcher* b = malloc(sizeof(batcher)); 
-    if ( unlikely( b == NULL ) ) return NULL;
+    if ( unlikely( b == NULL ) ) 
+        return NULL;
 
+    b->first = true;
     b->counter = 0;
     b->remaining = 0;
     b->nb_blocked = 0;
 
-    b->round_lock = malloc(sizeof(struct lock_t));
-    if ( unlikely( !lock_init(b->round_lock) ) )
+    if (unlikely( !shared_lock_init(&(b->mutex)) ))
     {
-        free(b->round_lock);
         free(b);
         return NULL;
     }
 
-    b->mutex = malloc(sizeof(struct lock_t));
-    if ( unlikely( !lock_init(b->mutex) ) )
+    b->block = malloc(sizeof(struct lock_t));
+    if (unlikely( !lock_init(b->block) ))
     {
-        lock_cleanup(b->round_lock);
-        free(b->round_lock);
+        shared_lock_cleanup(&(b->mutex));
         free(b);
         return NULL;
     }
-    
+
+    b->remaining_lock = malloc(sizeof(struct lock_t));
+    if (unlikely( !lock_init(b->remaining_lock) ))
+    {
+        shared_lock_cleanup(&(b->mutex));
+        lock_cleanup(b->block);
+        free(b);
+        return NULL;
+    }
+
     return b;
 }
 
@@ -43,40 +53,47 @@ size_t batcher_epoch(batcher* batch)
 
 bool pred(batcher* b, transaction_t* tx, size_t epoch)
 {
-    lock_acquire(b->mutex);
     bool same = epoch == batcher_epoch(b);
-    lock_release(b->mutex);
     return same;
 }
 
+// TODO:  LAISSEZ ENTRER JUSQU'A FIN READ ONLY
+
 void batcher_enter(batcher* b, transaction_t* tx)
 {
-    // TODO: READ_WRITE LOCK = shared_lock
-    lock_acquire(b->mutex);
+    // 
+    shared_lock_acquire_shared(&(b->mutex));
+    // 
 
-    // TODO:  LAISSEZ ENTRER JUSQU'A FIN READ ONLY
-
-    bool first = b->remaining == 0;
+    bool t = true;
+    bool first = atomic_compare_exchange_strong(&b->first, &t, false);
+   
     log_info("[%p]  batch_enter  first=%u", tx, first);
     if ( !first )
     {
         size_t epoch = batcher_epoch(b);
-        lock_release(b->mutex);
-        lock_acquire(b->round_lock);
+        lock_acquire(b->block);
         while ( pred(b, tx, epoch) )
         {
             log_error("[%p]  batch_enter  WAITING on epoch=%zu", tx, epoch);
-            lock_wait(b->round_lock);
+            lock_wait(b->block);
         }
-        lock_release(b->round_lock);
-        lock_acquire(b->mutex);
+        lock_release(b->block);
         log_error("[%p]  batch_enter  ENTERING prev=%zu, now=%zu", tx, epoch, batcher_epoch(b));
     }
-    
-    b->remaining++;
-    log_info("[%p]  batch_enter  - end  first=%u, remaining=%zu", tx, first, b->remaining);
 
-    lock_release(b->mutex);
+
+    lock_acquire(b->remaining_lock);
+    b->remaining++;
+    lock_release(b->remaining_lock);
+    
+    log_info("[%p]  batch_enter  - end  first=%u, remaining=%zu", tx, first, b->remaining);
+}
+
+void batcher_final(batcher* b)
+{
+    shared_lock_release(&(b->mutex));
+    shared_lock_release_shared(&(b->mutex));
 }
 
 /**
@@ -84,13 +101,24 @@ void batcher_enter(batcher* b, transaction_t* tx)
  */
 bool batcher_leave(batcher* b, transaction_t* tx)
 {
-    log_info("[%p]  batch_leave  pre_leave remaining=%u", tx, b->remaining);
-    lock_acquire(b->mutex);
+    // -> false
+    // log_info("[%p]  batch_leave  1 remaining=%u", tx, b->remaining);
+    shared_lock_release_shared(&(b->mutex));
+    // log_info("[%p]  batch_leave  2 remaining=%u", tx, b->remaining);
+    shared_lock_acquire(&(b->mutex));
+    // -> true
+
+    // log_info("[%p]  batch_leave  3 remaining=%u", tx, b->remaining);
+    lock_acquire(b->remaining_lock);
     b->remaining--;
+    log_info("[%p]  batch_leave  4 remaining=%u", tx, b->remaining);
     bool last_remaining = b->remaining == 0;
-    log_info("[%p]  batch_leave  remaining=%u, last=%u", tx, b->remaining, last_remaining);
+    lock_release(b->remaining_lock);
+
+    log_info("[%p]  batch_leave  5 remaining=%u, last=%u", tx, b->remaining, last_remaining);
     if ( !last_remaining )
-        lock_release(b->mutex);
+        batcher_final(b);
+
     return last_remaining;
 }
 
@@ -98,14 +126,14 @@ void batcher_wake_up(batcher* b)
 {
     b->counter++;
     log_error(" >>>>>>   batch_leave  counter=%zu", b->counter);
-    lock_release(b->mutex);
-    lock_wake_up(b->round_lock);
+    batcher_final(b);
+    lock_wake_up(b->block);
 }
 
 void batcher_free(batcher* b)
 {
-    lock_cleanup(b->round_lock);
-    lock_cleanup(b->mutex);
+    shared_lock_cleanup(&(b->mutex));
+    lock_cleanup(b->block);
     free(b);
 }
 

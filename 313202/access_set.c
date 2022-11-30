@@ -13,6 +13,17 @@ bool as_contains( access_set_t* as, transaction_t* tx )
     return as_extract_tx( atomic_load(as) ) == (size_t) tx;
 }
 
+void as_revert_read(access_set_t* as, transaction_t* tx)
+{
+    // 2 -> 1
+    // 1 -> 0
+}
+
+void as_revert_write(access_set_t* as, transaction_t* tx)
+{
+    // 3 -> 0 (can do 1->3, in that case 3->1 ?? )
+}
+
 char as_read_op(access_set_t* as, transaction_t* tx)
 {
     size_t init_state = INIT_STATE; 

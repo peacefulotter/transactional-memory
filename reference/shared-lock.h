@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef SHARED_LOCK_H
+#define SHARED_LOCK_H
+
 // Requested feature: pthread_rwlock_t
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
@@ -51,3 +54,6 @@ bool shared_lock_acquire_shared(struct shared_lock_t* lock);
  * @param lock Lock to release
 **/
 void shared_lock_release_shared(struct shared_lock_t* lock);
+
+
+#endif

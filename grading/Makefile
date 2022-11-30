@@ -17,7 +17,8 @@ SRCS_CXX := $(foreach SOURCE_DIR,$(SOURCE_DIRS),$(call WILD_EXT,EXT_CXX,$(SOURCE
 OBJS     := $(SRCS_C:%=%.o) $(SRCS_CXX:%=%.o)
 
 CC       := $(CC)
-CCFLAGS  := -Wall -Wextra -Wfatal-errors -O2 -std=c11 $(foreach INCLUDE_DIR,$(INCLUDE_DIRS),-I$(INCLUDE_DIR))
+# c11
+CCFLAGS  := -Wall -Wextra -Wfatal-errors -O2 -std=gnu99 $(foreach INCLUDE_DIR,$(INCLUDE_DIRS),-I$(INCLUDE_DIR))
 CXX      := $(CXX)
 CXXFLAGS := -Wall -Wextra -Wfatal-errors -O2 -std=c++17 $(foreach INCLUDE_DIR,$(INCLUDE_DIRS),-I$(INCLUDE_DIR))
 LD       := $(if $(SRCS_CXX),$(CXX),$(CC))

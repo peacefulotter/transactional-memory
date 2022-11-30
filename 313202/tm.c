@@ -37,6 +37,7 @@
 #include "logger.h"
 #include "virtual.h"
 #include "access_set.h"
+#include "transaction.h"
 
 bool read_word(shared_mem_segment seg, size_t w_i, void* read_to, transaction_t* tx, size_t word_size);
 bool write_word(shared_mem_segment seg, size_t w_i, const void* write_from, transaction_t* tx, size_t word_size);
@@ -173,6 +174,7 @@ tx_t tm_begin(shared_t shared, bool is_ro)
 
     tx->read_only = is_ro;
     tx->seg_free_size = 0;
+    tx->modified.size = 0;
 
     batcher_enter(mem->batcher, tx);
 
@@ -238,6 +240,7 @@ bool commit( shared_mem* mem, transaction_t* tx )
 // returns true if commited succesfully or not allow to commit (not last tx on batcher)
 bool leave_and_commit(shared_mem* mem, transaction_t* tx)
 {
+    // TODO: what if abort
     bool committed = true;
     batcher* b = mem->batcher;
     if ( batcher_leave(b, tx) ) 
@@ -264,8 +267,7 @@ bool tm_end(shared_t shared, tx_t tx) {
 
     bool committed = leave_and_commit(mem, transaction);
 
-    // free the segments 
-    // TODO: not sure about this
+    // free the segments
     size_t s = transaction->seg_free_size;
     for (size_t i = 0; i < s; i++)
         segment_free(*transaction->seg_free[i]);
@@ -295,6 +297,15 @@ bool read_word(shared_mem_segment seg, size_t w_i, void* read_to, transaction_t*
 }
 
 
+void save_modif_read_word(shared_mem* mem, size_t s_i, size_t w_i)
+{
+    lock_acquire(mem->modif_read.lock);
+    mem->modif_read.segment_indices[mem->modif_read.size] = s_i;
+    mem->modif_read.word_indices[mem->modif_read.size++] = w_i;
+    lock_release(mem->modif_read.lock);
+}
+
+ 
 /** [thread-safe] Read operation in the given transaction, source in the shared region and target in a private region.
  * @param shared Shared memory region associated with the transaction
  * @param tx     Transaction to use
@@ -318,21 +329,18 @@ bool tm_read(shared_t shared, tx_t tx, void const* source, size_t size, void* ta
     {
         size_t w_i = base_w_i + offset;
 
-        if ( !transaction->read_only )
-        {
-            lock_acquire(mem->modif_read.lock);
-            mem->modif_read.segment_indices[mem->modif_read.size] = s_i;
-            mem->modif_read.word_indices[mem->modif_read.size++] = w_i;
-            lock_release(mem->modif_read.lock);
-        }
-
         if ( !read_word(seg, w_i, target + offset * a, transaction, a) )
         {
             log_fatal(" [%p] read failed", tx);
             word_print(transaction, seg, w_i);
+            transaction_abort(mem, transaction);
             leave_and_commit(mem, transaction);
             return false;
         }
+
+        // TODO: ? if transaction is not read_only, word access set is reset by 
+        save_modif_read_word(mem, s_i, w_i);
+        add_transactioned_word(transaction, s_i, w_i, READ_MODIF);
     }
 
     return true;
@@ -348,6 +356,14 @@ bool write_word(shared_mem_segment seg, size_t w_i, const void* src, transaction
     }
 
     return false;
+}
+
+void save_modif_write_word(shared_mem* mem, size_t s_i, size_t w_i)
+{
+    lock_acquire(mem->modif_write.lock);
+    mem->modif_write.segment_indices[mem->modif_write.size] = s_i;
+    mem->modif_write.word_indices[mem->modif_write.size++] = w_i;
+    lock_release(mem->modif_write.lock);
 }
 
 /** [thread-safe] Write operation in the given transaction, source in a private region and target in the shared region.
@@ -374,11 +390,6 @@ bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size, void* t
     {
         size_t w_i = base_w_i + offset;
 
-        lock_acquire(mem->modif_write.lock);
-        mem->modif_write.segment_indices[mem->modif_write.size] = s_i;
-        mem->modif_write.word_indices[mem->modif_write.size++] = w_i;
-        lock_release(mem->modif_write.lock);
-
         if ( !write_word(seg, w_i, source + offset * a, transaction, a) ) 
         {
             // TODO: problem when writeV, writeX
@@ -386,9 +397,15 @@ bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size, void* t
             // set word to invalid?
             log_fatal(" [%p] write failed", tx);
             word_print(transaction, seg, w_i);
+            transaction_abort(mem, transaction);
             leave_and_commit(mem, transaction);
             return false;
         }
+
+        // duplicate save
+        // TODO: instead save index (transaction->write_indices, read_indices of mem->modif_write and mem->modif_read)
+        save_modif_write_word(mem, s_i, w_i);
+        add_transactioned_word(transaction, s_i, w_i, WRITE_MODIF);
     }
 
     return true;

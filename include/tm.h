@@ -36,29 +36,47 @@
 #define MAX_WORDS 2 << 48
 #define MAX_MODIFIED 2 << 10
 #define MAX_FREE_SEG 2 << 5
+// TODO: less MAX_MODIF and MAX_FREE
+
+#define READ_MODIF false
+#define WRITE_MODIF true
 
 typedef struct shared_mem shared_mem;
 typedef struct shared_mem_segment shared_mem_segment;
 typedef struct transaction_t transaction_t;
+typedef struct transactioned_words transactioned_words;
 typedef struct batcher batcher;
 typedef atomic_size_t access_set_t;
 
 struct batcher
 {
+    atomic_bool first;
     size_t counter;
     size_t remaining;
     size_t nb_blocked;
 
-    // struct shared_lock_t lock;
+    struct shared_lock_t mutex;
+    struct lock_t* block;
+    struct lock_t* remaining_lock;
 
-    struct lock_t* mutex;
-    struct lock_t* round_lock;
+    // struct lock_t* mutex;
+    // struct lock_t* round_lock;
+};
+
+// words modified by a transaction
+struct transactioned_words
+{
+    size_t segment_indices[MAX_MODIFIED];
+    size_t word_indices[MAX_MODIFIED];
+    bool modif_type[MAX_MODIFIED];
+    size_t size;
 };
 
 struct transaction_t
 {
     bool read_only;
     size_t seg_free_size;
+    transactioned_words modified;
     shared_mem_segment* seg_free[MAX_FREE_SEG];
 };
 
