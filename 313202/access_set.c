@@ -13,15 +13,15 @@ bool as_contains( access_set_t* as, transaction_t* tx )
     return as_extract_tx( atomic_load(as) ) == (size_t) tx;
 }
 
-void as_revert_read(access_set_t* as, transaction_t* tx)
-{
-    // 2 -> 1
-    // 1 -> 0
-}
-
 void as_revert_write(access_set_t* as, transaction_t* tx)
 {
-    // 3 -> 0 (can do 1->3, in that case 3->1 ?? )
+    // TODO:  (can do 1->3, in that case 3->1 ?? )
+    
+    // 3 -> 0
+    size_t init_state = INIT_STATE; 
+    size_t write_same_tx = as_format(tx, WRITE_STATE); 
+    if ( atomic_compare_exchange_strong(as, &write_same_tx, init_state) )
+        return;
 }
 
 char as_read_op(access_set_t* as, transaction_t* tx)
@@ -51,6 +51,8 @@ char as_read_op(access_set_t* as, transaction_t* tx)
     else if ( read_other_tx == as_format(as_extract_tx(read_other_tx), WRITE_STATE) )
         return WRITE_STATE;
 
+    // move to invalid
+    atomic_store(as, INVALID_STATE);
     return INVALID_STATE;
 }
 
@@ -72,6 +74,7 @@ bool as_write_op(access_set_t* as, transaction_t* tx)
     if ( atomic_compare_exchange_strong(as, &from_read_state_tx, write_same_tx) )
         return true;
     
+    atomic_store(as, INVALID_STATE);
     return false;
 }
 
