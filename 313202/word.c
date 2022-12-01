@@ -10,6 +10,7 @@
 #include "vec.h"
 #include "logger.h"
 #include "tm.h"
+#include "lock.h"
 
 size_t format( void* src, size_t size )
 {
@@ -18,16 +19,25 @@ size_t format( void* src, size_t size )
     return f;
 }
 
-
-size_t word_save_modif(shared_mem* mem, size_t s_i, size_t w_i, bool is_read)
+size_t word_save_read_modif(shared_mem* mem, size_t s_i, size_t w_i)
 {
-    struct modified_words_lock w = is_read ? mem->modif_read : mem->modif_write;
-    lock_acquire(w.lock);
-    size_t idx = w.size;
-    w.segment_indices[idx] = s_i;
-    w.word_indices[idx] = w_i;
-    w.size++;
-    lock_release(w.lock);
+    lock_acquire(mem->modif_read.lock);
+    size_t idx = mem->modif_read.size;
+    mem->modif_read.segment_indices[idx] = s_i;
+    mem->modif_read.word_indices[idx] = w_i;
+    mem->modif_read.size++;
+    lock_release(mem->modif_read.lock);
+    return idx;
+}
+
+size_t word_save_write_modif(shared_mem* mem, size_t s_i, size_t w_i)
+{
+    lock_acquire(mem->modif_write.lock);
+    size_t idx = mem->modif_write.size;
+    mem->modif_write.segment_indices[idx] = s_i;
+    mem->modif_write.word_indices[idx] = w_i;
+    mem->modif_write.size++;
+    lock_release(mem->modif_write.lock);
     return idx;
 }
 

@@ -186,14 +186,12 @@ bool commit( shared_mem* mem, transaction_t* tx )
 {
     // swap written words
     lock_acquire(mem->modif_write.lock);
-    size_t* ww = tx->write_words_indices;
-    size_t ws = tx->write_size;
-    log_info("[%p]  commit  start, written word=%zu", tx, ws);
+    size_t ws = mem->modif_write.size;
+    log_info("[%p]  commit  start, mem written word=%zu", tx, ws);
     for (size_t i = 0; i < ws; i++)
     {
-        size_t idx = ww[i];
-        size_t s_i = mem->modif_write.segment_indices[idx];
-        size_t w_i = mem->modif_write.word_indices[idx];
+        size_t s_i = mem->modif_write.segment_indices[i];
+        size_t w_i = mem->modif_write.word_indices[i];
         shared_mem_segment seg = mem->segments[s_i];
 
         if ( swap(seg.readCopies + w_i, seg.writeCopies + w_i, mem->align))
@@ -206,14 +204,12 @@ bool commit( shared_mem* mem, transaction_t* tx )
 
     // reset access set of read words
     lock_acquire(mem->modif_read.lock);
-    size_t* rw = tx->read_words_indices;
-    size_t rs = tx->read_size;
+    size_t rs = mem->modif_read.size;
     log_info("[%p]  commit  part2, read word=%zu", tx, rs);
     for (size_t i = 0; i < rs; i++)
     {
-        size_t idx = rw[i];
-        size_t s_i = mem->modif_read.segment_indices[idx];
-        size_t w_i = mem->modif_read.word_indices[idx];
+        size_t s_i = mem->modif_read.segment_indices[i];
+        size_t w_i = mem->modif_read.word_indices[i];
         shared_mem_segment seg = mem->segments[s_i];
         as_reset(&seg.access_sets[w_i]);
     }
@@ -324,7 +320,7 @@ bool tm_read(shared_t shared, tx_t tx, void const* source, size_t size, void* ta
             return false;
         }
 
-        size_t idx = word_save_modif(mem, s_i, w_i, true);
+        size_t idx = word_save_read_modif(mem, s_i, w_i);
         transaction_register_read_word(transaction, idx);
     }
 
@@ -376,7 +372,7 @@ bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size, void* t
             return false;
         }
 
-        size_t idx = word_save_modif(mem, s_i, w_i, false);
+        size_t idx = word_save_write_modif(mem, s_i, w_i);
         transaction_register_write_word(transaction, idx);
     }
 
