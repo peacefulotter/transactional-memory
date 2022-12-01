@@ -10,7 +10,7 @@
 
 bool as_contains( access_set_t* as, transaction_t* tx )
 {
-    return as_extract_tx( atomic_load(as) ) == (size_t) tx;
+    return load_tx(as) == ((size_t) tx);
 }
 
 void as_revert_write(access_set_t* as, transaction_t* tx)
@@ -51,8 +51,7 @@ char as_read_op(access_set_t* as, transaction_t* tx)
     else if ( read_other_tx == as_format(as_extract_tx(read_other_tx), WRITE_STATE) )
         return WRITE_STATE;
 
-    // move to invalid
-    atomic_store(as, INVALID_STATE);
+    // read not allowed - pretend to be in invalid state
     return INVALID_STATE;
 }
 
@@ -74,7 +73,7 @@ bool as_write_op(access_set_t* as, transaction_t* tx)
     if ( atomic_compare_exchange_strong(as, &from_read_state_tx, write_same_tx) )
         return true;
     
-    atomic_store(as, INVALID_STATE);
+    // write not allowed
     return false;
 }
 
@@ -83,7 +82,7 @@ void as_reset(access_set_t* as)
     atomic_store(as, INIT_STATE);
 }
 
-void as_print(transaction_t* tx, access_set_t* as)
+void as_print(access_set_t* as, transaction_t* tx)
 {
     size_t s = atomic_load(as);
     log_debug("[%p] AS: state=%u, tx=%p", tx, as_extract_state(s), as_extract_tx(s));

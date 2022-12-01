@@ -1,4 +1,8 @@
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdatomic.h>
+
 #include "macros.h"
 #include "vec.h"
 #include "segment.h"
@@ -7,8 +11,6 @@
 #include "logger.h"
 #include "virtual.h"
 
-#include <stdio.h>
-#include <stdlib.h>
 
 bool segment_alloc(shared_mem* mem, size_t size)
 {
@@ -16,8 +18,8 @@ bool segment_alloc(shared_mem* mem, size_t size)
 
     seg.size = size;
     seg.access_sets = calloc(size, sizeof(access_set_t)); 
-    seg.writeCopies = calloc(size, sizeof(void*)); 
-    seg.readCopies = calloc(size, sizeof(void*)); 
+    seg.writeCopies = calloc(size, mem->align);  // sizeof(void*)
+    seg.readCopies = calloc(size, mem->align); // sizeof(void*)
     
     if ( unlikely( 
         seg.access_sets == NULL || 
@@ -29,12 +31,6 @@ bool segment_alloc(shared_mem* mem, size_t size)
         free(seg.writeCopies);
         free(seg.readCopies);
         return true;
-    }
-
-    for (size_t i = 0; i < size; i++)
-    {
-        seg.writeCopies[i] = calloc(1, mem->align);
-        seg.readCopies[i] = calloc(1, mem->align);
     }
 
     mem->segments[mem->allocated_segments++] = seg;

@@ -4,5 +4,7 @@
 #include "tm.h"
 
 tx_t transaction_init(shared_mem* mem, bool is_ro);
-void transaction_add_word(transaction_t* tx, size_t s_i, size_t w_i, bool is_read);
+bool transaction_check(shared_mem* mem, transaction_t* tx);
+void transaction_register_write_word(transaction_t* tx, size_t idx);
+void transaction_register_read_word(transaction_t* tx, size_t idx);
 void transaction_abort(shared_mem* mem, transaction_t* tx);
