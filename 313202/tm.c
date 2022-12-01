@@ -171,13 +171,14 @@ tx_t tm_begin(shared_t shared, bool is_ro)
 
 bool swap(void *a, void *b, size_t width)
 {
-    // TODO: only write to readCopy
-    void *temp = malloc(width);
-    if ( unlikely(temp == NULL) ) return true;
-    memcpy(temp, b, width);
-    memcpy(b, a, width);
-    memcpy(a, temp, width);
-    free(temp);
+    // void *temp = malloc(width);
+    // if ( unlikely(temp == NULL) ) return true;
+    // memcpy(temp, b, width);
+    // memcpy(b, a, width);
+    // memcpy(a, temp, width);
+    // free(temp);
+    // return false;
+    memcpy(a, b, width);
     return false;
 }
 
@@ -332,6 +333,7 @@ bool write_word(shared_mem_segment seg, size_t w_i, const void* src, transaction
 {
     if ( as_write_op(&seg.access_sets[w_i], tx) )
     {
+        log_debug("[%p] Writing %zu to %zu", tx, src, w_i);
         memcpy(seg.writeCopies + w_i, src, word_size);
         return true;
     }

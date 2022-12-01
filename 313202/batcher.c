@@ -61,18 +61,6 @@ void batcher_enter(batcher* b, transaction_t* tx)
         log_error("[%p]  batch_enter  ENTERING", tx);
     }
 
-    if ( tx->read_only)
-    {
-        log_info("[%p]  batch_enter  READ_ONLY");
-        log_info("[%p]  batch_enter  READ_ONLY");
-        log_info("[%p]  batch_enter  READ_ONLY");
-        log_info("[%p]  batch_enter  READ_ONLY");
-        log_info("[%p]  batch_enter  READ_ONLY");
-        log_info("[%p]  batch_enter  READ_ONLY");
-        log_info("[%p]  batch_enter  READ_ONLY");
-        log_info("[%p]  batch_enter  READ_ONLY");
-    }
-
     lock_acquire(b->remaining_lock);
     b->remaining++;
     lock_release(b->remaining_lock);
@@ -99,23 +87,17 @@ void batcher_block_entry(batcher* b)
  */
 bool batcher_leave(batcher* b, transaction_t* tx)
 {
-    log_info("[%p]  batch_leave  1", tx);
-
-    if ( tx->read_only )
-        batcher_block_entry(b);
-
-    log_info("[%p]  batch_leave  2", tx);
     lock_acquire(b->remaining_lock);
+
+    log_info("[%p]  batch_leave", tx);
     b->remaining--;
     bool last_remaining = b->remaining == 0;
 
-    if ( !tx->read_only && last_remaining )
+    if ( tx->read_only || !tx->read_only && last_remaining )
         batcher_block_entry(b);
 
-    log_info("[%p]  batch_leave  3 remaining=%u", tx, b->remaining);
+    log_info("[%p]  batch_leave  remaining=%u, last=%u", tx, b->remaining, last_remaining);
     lock_release(b->remaining_lock);
-
-    log_info("[%p]  batch_leave  4 last=%u", tx, last_remaining);
 
     return last_remaining;
 }
@@ -123,9 +105,6 @@ bool batcher_leave(batcher* b, transaction_t* tx)
 void batcher_wake_up(batcher* b)
 {
     b->epoch++;
-    log_error(" >>>>>>   batch_wake_up  epoch=%zu", b->epoch);
-    log_error(" >>>>>>   batch_wake_up  epoch=%zu", b->epoch);
-    log_error(" >>>>>>   batch_wake_up  epoch=%zu", b->epoch);
     log_error(" >>>>>>   batch_wake_up  epoch=%zu", b->epoch);
     batcher_allow_entry(b);
     lock_wake_up(b->block);
