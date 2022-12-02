@@ -77,6 +77,7 @@ parser.add_argument("zippath",
 
 # Command line parsing
 args = parser.parse_args(sys.argv[1:])
+print(args)
 
 # ---------------------------------------------------------------------------- #
 # Socket helper

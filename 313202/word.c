@@ -41,7 +41,7 @@ size_t word_save_write_modif(shared_mem* mem, size_t s_i, size_t w_i)
     return idx;
 }
 
-void word_print(shared_mem* mem, transaction_t* tx, shared_mem_segment seg, size_t word_index)
+size_t word_print(shared_mem* mem, transaction_t* tx, shared_mem_segment seg, size_t word_index)
 {
     size_t s = atomic_load(&seg.access_sets[word_index]);
     void* read = seg.readCopies + word_index;
@@ -54,4 +54,5 @@ void word_print(shared_mem* mem, transaction_t* tx, shared_mem_segment seg, size
         write, format(write, mem->align),
         as_extract_state(s), as_extract_tx(s)
     );
+    return format(read, mem->align);
 }

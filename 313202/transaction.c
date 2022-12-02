@@ -17,29 +17,10 @@ tx_t transaction_init(shared_mem* mem, bool is_ro)
     tx->read_only = is_ro;
     tx->seg_free_size = 0;
     tx->write_size = 0;
-    tx->read_size = 0;
 
     batcher_enter(mem->batcher, tx);
 
     return (tx_t) tx;
-}
-
-bool transaction_check(shared_mem* mem, transaction_t* tx)
-{
-    size_t* w = tx->read_words_indices;
-    size_t s = tx->read_size;
-    log_debug("[%p] Check words read n=%zu", tx, s);
-    for (size_t i = 0; i < s; i++)
-    {
-        size_t idx = w[i];
-        size_t s_i = mem->modif_read.segment_indices[idx];
-        size_t w_i = mem->modif_read.word_indices[idx];
-        shared_mem_segment seg = mem->segments[s_i];
-        char state = load_state(&seg.access_sets[w_i]);
-        if (state == INVALID_STATE)
-            return false;
-    }
-    return true;
 }
 
 void transaction_register_write_word(transaction_t* tx, size_t idx)
@@ -47,13 +28,18 @@ void transaction_register_write_word(transaction_t* tx, size_t idx)
     tx->write_words_indices[tx->write_size++] = idx;
 }
 
-void transaction_register_read_word(transaction_t* tx, size_t idx)
-{
-    tx->read_words_indices[tx->read_size++] = idx;
-}
+// void transaction_register_read_word(transaction_t* tx, size_t idx)
+// {
+//     tx->read_words_indices[tx->read_size++] = idx;
+// }
 
 void transaction_abort(shared_mem* mem, transaction_t* tx)
 {
+    batcher_block_entry(mem->batcher);
+
+    if ( tx->read_only )
+        return;
+
     size_t* w = tx->write_words_indices;
     size_t s = tx->write_size;
     log_debug("[%p] Abort - reverting %zu words", tx, s);

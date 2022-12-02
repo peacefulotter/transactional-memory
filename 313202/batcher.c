@@ -14,7 +14,7 @@ batcher* get_batcher()
     if ( unlikely( b == NULL ) ) 
         return NULL;
 
-    atomic_init(&b->blocked, 0);
+    b->blocked = 0;
     b->epoch = 0;
     b->remaining = 0;
 
@@ -41,45 +41,40 @@ size_t batcher_epoch(batcher* batch)
     return batch->epoch;
 }
 
-bool wait_pred(batcher* b)
-{
-    return atomic_load(&(b->blocked));
-}
-
 void batcher_enter(batcher* b, transaction_t* tx)
 {
     log_info("[%p]  batch_enter  blocked=%u", tx, b->blocked);
-    if ( wait_pred(b) )
+    lock_acquire(b->block);
+    while ( b->blocked )
     {
-        lock_acquire(b->block);
-        while ( wait_pred(b) )
-        {
-            log_error("[%p]  batch_enter  WAITING", tx);
-            lock_wait(b->block);
-        }
-        lock_release(b->block);
-        log_error("[%p]  batch_enter  ENTERING", tx);
+        log_info("[%p]  batch_enter  WAITING", tx);
+        lock_wait(b->block);
     }
-
-    lock_acquire(b->remaining_lock);
-    b->remaining++;
-    lock_release(b->remaining_lock);
     
-    log_info("[%p]  batch_enter  - end, remaining=%zu", tx, b->remaining);
+    // lock_acquire(b->remaining_lock);
+    b->remaining++;
+    // lock_release(b->remaining_lock);
+    lock_release(b->block);
+    log_info("[%p]  batch_enter  ENTERING, remaining=%zu", tx, b->remaining);
 }
 
 void batcher_allow_entry(batcher* b)
 {
     log_info("[]  --- batcher_allow_entry");
-    bool t = true;
-    atomic_compare_exchange_strong(&(b->blocked), &t, false);
+    b->blocked = false;
+    lock_release(b->block);
 }
 
+/**
+ * TODO - grader: modify policy
+ * Policy: block on read_only finished
+ *  OR last one to leave
+ *  OR first tx to fail
+ */
 void batcher_block_entry(batcher* b)
 {
-    log_info("[]  --- batcher_block_entry");
-    bool f = false;
-    atomic_compare_exchange_strong(&(b->blocked), &f, true);
+    log_error("[]  -------- batcher_block_entry");
+    b->blocked = true;
 }
 
 /**
@@ -87,19 +82,18 @@ void batcher_block_entry(batcher* b)
  */
 bool batcher_leave(batcher* b, transaction_t* tx)
 {
-    lock_acquire(b->remaining_lock);
+    lock_acquire(b->block);
 
     log_info("[%p]  batch_leave", tx);
     b->remaining--;
-    bool last_remaining = b->remaining == 0;
+    bool last = b->remaining == 0;
 
-    if ( tx->read_only || !tx->read_only && last_remaining )
+    if ( tx->read_only || (!tx->read_only && last) )
         batcher_block_entry(b);
 
-    log_info("[%p]  batch_leave  remaining=%u, last=%u", tx, b->remaining, last_remaining);
-    lock_release(b->remaining_lock);
+    log_info("[%p]  batch_leave  remaining=%u, last=%u", tx, b->remaining, last);
 
-    return last_remaining;
+    return last;
 }
 
 void batcher_wake_up(batcher* b)

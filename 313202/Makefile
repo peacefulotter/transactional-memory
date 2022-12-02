@@ -22,7 +22,9 @@ CXX      := $(CXX)
 CXXFLAGS := -Wall -Wextra -Wfatal-errors -O2 -std=c++17 -fPIC -I$(INCLUDE_DIR)
 LD       := $(if $(SRCS_CXX),$(CXX),$(CC))
 LDFLAGS  := -shared
-LDLIBS   :=
+LDLIBS   := 
+ASAN_FLAGS = -fsanitize=address -fno-omit-frame-pointer -Wno-format-security
+ASAN_LIBS  = -static-libasan
 
 .PHONY: build clean
 
@@ -32,7 +34,7 @@ clean:
 
 define BUILD_C
 %.$(1).o: %.$(1) $$(HDRS_C) Makefile
-	$$(CC) $$(CCFLAGS) -c -o $$@ $$<
+	$$(CC) $(ASAN_FLAGS) $$(CCFLAGS) -c -o $$@ $(ASAN_LIBS) $$<  
 endef
 $(foreach EXT,$(EXT_C),$(eval $(call BUILD_C,$(EXT))))
 
@@ -43,4 +45,4 @@ endef
 $(foreach EXT,$(EXT_CXX),$(eval $(call BUILD_CXX,$(EXT))))
 
 $(BIN): $(OBJS) Makefile
-	$(LD) $(LDFLAGS) -o $@ $(OBJS) $(LDLIBS)
+	$(LD) $(LDFLAGS) $(ASAN_FLAGS) -o $@ $(OBJS) $(LDLIBS) $(ASAN_LIBS)

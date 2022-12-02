@@ -48,7 +48,7 @@ typedef atomic_size_t access_set_t;
 
 struct batcher
 {
-    atomic_bool blocked;
+    bool blocked;
 
     size_t epoch;
     size_t remaining;
@@ -61,12 +61,8 @@ struct transaction_t
 {
     bool read_only;
 
-    // TODO: init tx
     size_t write_size;
     size_t write_words_indices[MAX_MODIFIED_PER_TX];
-
-    size_t read_size;
-    size_t read_words_indices[MAX_MODIFIED_PER_TX];
 
     size_t seg_free_size;
     shared_mem_segment* seg_free[MAX_FREE_SEG];
@@ -93,6 +89,9 @@ struct modified_words_lock
 
 struct shared_mem
 {
+    size_t max_read;
+    size_t max_write;
+
     size_t align;
 
     batcher* batcher;

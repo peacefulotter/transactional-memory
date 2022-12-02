@@ -177,6 +177,7 @@ private:
                 start = segment.next; // Accounts are stored in linked segments, we move to the next one.
             }
             nbaccounts = count;
+            // ::std::cerr << "\n\n////////// CUSTOM /////////// count: " << count << " sum: " << sum << "\n\n" << ::std::endl;
             return sum == static_cast<Balance>(init_balance * count); // Consistency check: no money should ever be destroyed or created out of thin air.
         });
     }

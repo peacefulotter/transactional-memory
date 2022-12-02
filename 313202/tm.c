@@ -39,11 +39,13 @@
 #include "access_set.h"
 #include "transaction.h"
 
+ 
 bool read_word(shared_mem_segment seg, size_t w_i, void* read_to, transaction_t* tx, size_t word_size);
 bool write_word(shared_mem_segment seg, size_t w_i, const void* write_from, transaction_t* tx, size_t word_size);
 
-void print_mem(shared_mem* mem)
+void print_mem(shared_mem* mem, transaction_t* tx)
 {
+    return;
     log_debug("=====================================");
     log_debug("mem.align: %zu", mem->align);
     size_t s = atomic_load(&mem->allocated_segments);
@@ -52,8 +54,18 @@ void print_mem(shared_mem* mem)
     {
         shared_mem_segment s = mem->segments[i];
         log_debug("segment nb %zu, segment size: %zu", i, s.size);
-        for (size_t j = 0; j < 10; j++)
-            word_print(mem, NULL, s, j);
+        size_t sum = 0;
+        size_t count = 0;
+        for (size_t j = 0; j < 260; j++)
+        {
+            size_t v = word_print(mem, tx, s, j);
+            if (j > 0 && v > 0)
+            {
+                sum += v;
+                count++;
+            }
+        }
+        log_debug("[%p] Sum: %zu, count: %zu, average: %f", tx, sum, count, (float) sum / (float) count);
         log_debug("----------------------");
     }
     batcher_print(mem->batcher);
@@ -68,7 +80,7 @@ void print_mem(shared_mem* mem)
 **/
 shared_t tm_create(size_t size, size_t align) {
     
-    // log_set_quiet(true);
+    log_set_quiet(true);
 
     log_info("===== tm_create start size: %zu, align: %zu", size, align);
     shared_mem* mem = malloc(sizeof(shared_mem));
@@ -98,7 +110,7 @@ shared_t tm_create(size_t size, size_t align) {
     lock_init(mem->modif_read.lock);
     lock_init(mem->modif_write.lock);
 
-    print_mem(mem);
+    print_mem(mem, NULL);
     return mem;
 
 fail_tm_create: 
@@ -130,6 +142,10 @@ void tm_destroy(shared_t shared) {
     
     mem->allocated_segments = 0;
     mem->align = 0;
+
+    // TODO: remove
+    mem->max_read = 0;
+    mem->max_write = 0;
 
     log_info("tm_destroy end\n");
 }
@@ -183,11 +199,14 @@ bool swap(void *a, void *b, size_t width)
 }
 
 
-bool commit( shared_mem* mem, transaction_t* tx )
+void commit( shared_mem* mem, transaction_t* tx )
 {
     // swap written words
     lock_acquire(mem->modif_write.lock);
     size_t ws = mem->modif_write.size;
+    mem->max_write = ws > mem->max_write ? ws : mem->max_write;
+    // printf("mem -> MAX WRITE SIZE: %zu \n", mem->max_write);
+
     log_info("[%p]  commit  start, mem written word=%zu", tx, ws);
     for (size_t i = 0; i < ws; i++)
     {
@@ -195,8 +214,8 @@ bool commit( shared_mem* mem, transaction_t* tx )
         size_t w_i = mem->modif_write.word_indices[i];
         shared_mem_segment seg = mem->segments[s_i];
 
-        if ( swap(seg.readCopies + w_i, seg.writeCopies + w_i, mem->align))
-            return false;
+        if ( load_state(&seg.access_sets[w_i]) == WRITE_STATE )
+            swap(seg.readCopies + w_i, seg.writeCopies + w_i, mem->align);
 
         as_reset(&seg.access_sets[w_i]);
     }
@@ -206,7 +225,8 @@ bool commit( shared_mem* mem, transaction_t* tx )
     // reset access set of read words
     lock_acquire(mem->modif_read.lock);
     size_t rs = mem->modif_read.size;
-    log_info("[%p]  commit  part2, read word=%zu", tx, rs);
+    mem->max_read = rs > mem->max_read ? rs : mem->max_read;
+    // printf("mem -> MAX READ SIZE: %zu \n", mem->max_read);
     for (size_t i = 0; i < rs; i++)
     {
         size_t s_i = mem->modif_read.segment_indices[i];
@@ -216,9 +236,6 @@ bool commit( shared_mem* mem, transaction_t* tx )
     }
     mem->modif_read.size = 0;
     lock_release(mem->modif_read.lock);
-
-    log_info("[%p]  commit  end", tx);
-    return true;
 }
 
 
@@ -228,23 +245,19 @@ bool leave_and_commit(shared_mem* mem, transaction_t* tx)
 {
     log_warn("[%p]  leave_and_commit start", tx);
 
-    bool committed = true;
     batcher* b = mem->batcher;
 
-    bool last = batcher_leave(b, tx);
-
-    // check all tx->read_word as are not invalid
-    bool success = transaction_check(mem, tx);
-
-    if ( last ) 
+    if ( batcher_leave(b, tx) ) 
     {
-        log_warn("[%p]  leave_and_commit  Committing...", tx);
-        committed = commit(mem, tx);
-        log_warn("[%p]  leave_and_commit  Finished commit worked=%u", tx, committed);
-        print_mem(mem);
+        log_fatal("[%p] committing ALONE?? ", tx);
+        commit(mem, tx);
+        print_mem(mem, tx);
         batcher_wake_up(b);
     }
-    return committed && success;
+    else
+        lock_release(b->block);
+
+    return true;
 }
 
 /** [thread-safe] End the given transaction.
@@ -253,7 +266,7 @@ bool leave_and_commit(shared_mem* mem, transaction_t* tx)
  * @return Whether the whole transaction committed
 **/
 bool tm_end(shared_t shared, tx_t tx) {
-    log_info("[%p]  tm_end  start", tx);
+    // log_info("[%p]  tm_end  start", tx);
 
     shared_mem* mem = (shared_mem*) shared;
     transaction_t* transaction = (transaction_t*) tx;
@@ -261,12 +274,13 @@ bool tm_end(shared_t shared, tx_t tx) {
     bool committed = leave_and_commit(mem, transaction);
 
     // free the segments
+    // TODO: also free segments when tx aborts?
     size_t s = transaction->seg_free_size;
     for (size_t i = 0; i < s; i++)
         segment_free(*transaction->seg_free[i]);
     transaction->seg_free_size = 0;   
 
-    log_info("[%p]  tm_end  end, commited=%u", tx, committed);
+    // log_info("[%p]  tm_end  end, commited=%u", tx, committed);
     return committed;
 }
 
@@ -279,7 +293,7 @@ bool read_word(shared_mem_segment seg, size_t w_i, void* read_to, transaction_t*
         char state = as_read_op(&seg.access_sets[w_i], tx);
         if ( state == INVALID_STATE )
             return false;
-        if ( state == WRITE_STATE )
+        else if ( state == WRITE_STATE )
             memcpy(read_to, seg.writeCopies + w_i, word_size);
         else if ( state == READ_STATE || state == DOUBLE_READ_STATE )
             memcpy(read_to, seg.readCopies + w_i, word_size);
@@ -288,7 +302,8 @@ bool read_word(shared_mem_segment seg, size_t w_i, void* read_to, transaction_t*
     return true;
 }
 
- 
+
+
 /** [thread-safe] Read operation in the given transaction, source in the shared region and target in a private region.
  * @param shared Shared memory region associated with the transaction
  * @param tx     Transaction to use
@@ -304,7 +319,7 @@ bool tm_read(shared_t shared, tx_t tx, void const* source, size_t size, void* ta
     size_t s_i = get_segment_index(source);
     size_t base_w_i = get_word_index(source);
 
-    log_info(" [%p]  tm_read  start (%zu, %zu)", tx, s_i, base_w_i);
+    // log_info(" [%p]  tm_read  start source=%p, (%zu, %zu)", tx, source, s_i, base_w_i);
 
     size_t a = mem->align;
     shared_mem_segment seg = mem->segments[s_i];
@@ -321,8 +336,10 @@ bool tm_read(shared_t shared, tx_t tx, void const* source, size_t size, void* ta
             return false;
         }
 
-        size_t idx = word_save_read_modif(mem, s_i, w_i);
-        transaction_register_read_word(transaction, idx);
+        // log_debug("[%p] Reading %zu to %zu", tx, *((size_t*) (target + offset * a)), w_i);
+
+        word_save_read_modif(mem, s_i, w_i); // size_t idx =
+        // transaction_register_read_word(transaction, idx);
     }
 
     return true;
@@ -333,8 +350,9 @@ bool write_word(shared_mem_segment seg, size_t w_i, const void* src, transaction
 {
     if ( as_write_op(&seg.access_sets[w_i], tx) )
     {
-        log_debug("[%p] Writing %zu to %zu", tx, src, w_i);
+        // log_debug("[%p] Before writing %zu to %zu", tx, (size_t) (*(seg.writeCopies + w_i)), w_i);
         memcpy(seg.writeCopies + w_i, src, word_size);
+        // log_debug("[%p] Writing %zu to %zu", tx, (size_t) (*(seg.writeCopies + w_i)), w_i);
         return true;
     }
 
@@ -357,7 +375,7 @@ bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size, void* t
     size_t s_i = get_segment_index(target);
     size_t base_w_i = get_word_index(target); 
 
-    log_info(" [%p]  tm_write  target=(%zu, %zu), size: %zu", tx, s_i, base_w_i, size);
+    // log_info(" [%p]  tm_write  target=(%zu, %zu), size: %zu", tx, s_i, base_w_i, size);
 
     size_t a = mem->align;
     shared_mem_segment seg = mem->segments[s_i];
@@ -401,7 +419,7 @@ alloc_t tm_alloc(shared_t shared, tx_t tx, size_t size, void** target) {
 
     *target = SEG_ADDR(mem->allocated_segments);
 
-    log_debug(" [%p]  tm_alloc  end, target=%p", tx, *target);
+    log_debug(" [%p] \n\n\n\n\n tm_alloc  end, target=%p", tx, *target);
 
     return success_alloc;
 }
