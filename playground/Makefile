@@ -23,6 +23,8 @@ CXXFLAGS := -Wall -Wextra -Wfatal-errors -O2 -std=c++17 -fPIC -I$(INCLUDE_DIR)
 LD       := $(if $(SRCS_CXX),$(CXX),$(CC))
 LDFLAGS  :=
 LDLIBS   := -lpthread
+LDFLAGS += -fsanitize=address -fno-omit-frame-pointer -Wno-format-security
+CFLAGS  += -fsanitize=address
 
 .PHONY: build run clean
 

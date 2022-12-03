@@ -15,7 +15,7 @@ bool as_contains( access_set_t* as, transaction_t* tx )
 
 void as_revert_write(access_set_t* as, transaction_t* tx)
 {
-    log_fatal("[%p] reverting word", tx);
+    // log_fatal("[%p] reverting word", tx);
     // 3 -> 0,  3 -> 1 -> 0
     size_t init_state = INIT_STATE; 
     size_t write_same_tx = as_format(tx, WRITE_STATE); 

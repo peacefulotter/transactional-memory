@@ -18,17 +18,8 @@ batcher* get_batcher()
     b->epoch = 0;
     b->remaining = 0;
 
-    b->block = malloc(sizeof(struct lock_t));
-    if (unlikely( !lock_init(b->block) ))
+    if (unlikely( !lock_init(&(b->block)) ))
     {
-        free(b);
-        return NULL;
-    }
-
-    b->remaining_lock = malloc(sizeof(struct lock_t));
-    if (unlikely( !lock_init(b->remaining_lock) ))
-    {
-        lock_cleanup(b->block);
         free(b);
         return NULL;
     }
@@ -43,26 +34,24 @@ size_t batcher_epoch(batcher* batch)
 
 void batcher_enter(batcher* b, transaction_t* tx)
 {
-    log_info("[%p]  batch_enter  blocked=%u", tx, b->blocked);
-    lock_acquire(b->block);
+    // log_info("[%p]  batch_enter  blocked=%u", tx, b->blocked);
+    lock_acquire(&(b->block));
     while ( b->blocked )
     {
-        log_info("[%p]  batch_enter  WAITING", tx);
-        lock_wait(b->block);
+        // log_info("[%p]  batch_enter  WAITING", tx);
+        lock_wait(&(b->block));
     }
     
-    // lock_acquire(b->remaining_lock);
     b->remaining++;
-    // lock_release(b->remaining_lock);
-    lock_release(b->block);
-    log_info("[%p]  batch_enter  ENTERING, remaining=%zu", tx, b->remaining);
+    lock_release(&(b->block));
+    // log_info("[%p]  batch_enter  ENTERING, remaining=%zu", tx, b->remaining);
 }
 
 void batcher_allow_entry(batcher* b)
 {
-    log_info("[]  --- batcher_allow_entry");
+    // log_info("[]  --- batcher_allow_entry");
     b->blocked = false;
-    lock_release(b->block);
+    lock_release(&(b->block));
 }
 
 /**
@@ -73,7 +62,7 @@ void batcher_allow_entry(batcher* b)
  */
 void batcher_block_entry(batcher* b)
 {
-    log_error("[]  -------- batcher_block_entry");
+    // log_error("[]  -------- batcher_block_entry");
     b->blocked = true;
 }
 
@@ -82,16 +71,16 @@ void batcher_block_entry(batcher* b)
  */
 bool batcher_leave(batcher* b, transaction_t* tx)
 {
-    lock_acquire(b->block);
+    lock_acquire(&(b->block));
 
-    log_info("[%p]  batch_leave", tx);
+    // log_info("[%p]  batch_leave", tx);
     b->remaining--;
     bool last = b->remaining == 0;
 
     if ( tx->read_only || (!tx->read_only && last) )
         batcher_block_entry(b);
 
-    log_info("[%p]  batch_leave  remaining=%u, last=%u", tx, b->remaining, last);
+    // log_info("[%p]  batch_leave  remaining=%u, last=%u", tx, b->remaining, last);
 
     return last;
 }
@@ -99,15 +88,14 @@ bool batcher_leave(batcher* b, transaction_t* tx)
 void batcher_wake_up(batcher* b)
 {
     b->epoch++;
-    log_error(" >>>>>>   batch_wake_up  epoch=%zu", b->epoch);
+    // log_error(" >>>>>>   batch_wake_up  epoch=%zu", b->epoch);
     batcher_allow_entry(b);
-    lock_wake_up(b->block);
+    lock_wake_up(&(b->block));
 }
 
 void batcher_free(batcher* b)
 {
-    lock_cleanup(b->remaining_lock);
-    lock_cleanup(b->block);
+    lock_cleanup(&(b->block));
     free(b);
 }
 

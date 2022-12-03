@@ -17,14 +17,15 @@ SRCS_CXX := $(call WILD_EXT,EXT_CXX,$(SOURCE_DIR))
 OBJS     := $(SRCS_C:%=%.o) $(SRCS_CXX:%=%.o)
 
 CC       := $(CC)
-CCFLAGS  := -Wall -Wextra -Wfatal-errors -O2 -std=gnu99 -fPIC -I$(INCLUDE_DIR)
+CCFLAGS  := -Wall -Wextra -Wfatal-errors -std=gnu99 -fPIC -I$(INCLUDE_DIR)
 CXX      := $(CXX)
-CXXFLAGS := -Wall -Wextra -Wfatal-errors -O2 -std=c++17 -fPIC -I$(INCLUDE_DIR)
+CXXFLAGS := -Wall -Wextra -Wfatal-errors -std=c++17 -fPIC -I$(INCLUDE_DIR)
 LD       := $(if $(SRCS_CXX),$(CXX),$(CC))
 LDFLAGS  := -shared
 LDLIBS   := 
-ASAN_FLAGS = -fsanitize=address -fno-omit-frame-pointer -Wno-format-security
-ASAN_LIBS  = -static-libasan
+
+LDFLAGS+= -fsanitize=address -fno-omit-frame-pointer -Wno-format-security
+CFLAGS += -fsanitize=address
 
 .PHONY: build clean
 
@@ -34,7 +35,7 @@ clean:
 
 define BUILD_C
 %.$(1).o: %.$(1) $$(HDRS_C) Makefile
-	$$(CC) $(ASAN_FLAGS) $$(CCFLAGS) -c -o $$@ $(ASAN_LIBS) $$<  
+	$$(CC) $$(CCFLAGS) -c -o $$@ $$<  
 endef
 $(foreach EXT,$(EXT_C),$(eval $(call BUILD_C,$(EXT))))
 
@@ -45,4 +46,4 @@ endef
 $(foreach EXT,$(EXT_CXX),$(eval $(call BUILD_CXX,$(EXT))))
 
 $(BIN): $(OBJS) Makefile
-	$(LD) $(LDFLAGS) $(ASAN_FLAGS) -o $@ $(OBJS) $(LDLIBS) $(ASAN_LIBS)
+	$(LD) $(LDFLAGS) -o $@ $(OBJS) $(LDLIBS)

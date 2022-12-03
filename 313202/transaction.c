@@ -42,13 +42,13 @@ void transaction_abort(shared_mem* mem, transaction_t* tx)
 
     size_t* w = tx->write_words_indices;
     size_t s = tx->write_size;
-    log_debug("[%p] Abort - reverting %zu words", tx, s);
+    // log_debug("[%p] Abort - reverting %zu words", tx, s);
     for (size_t i = 0; i < s; i++)
     {
         size_t idx = w[i];
         size_t s_i = mem->modif_write.segment_indices[idx];
         size_t w_i = mem->modif_write.word_indices[idx];
         shared_mem_segment seg = mem->segments[s_i];
-        as_revert_write(&seg.access_sets[w_i], tx);
+        as_revert_write(seg.access_sets + w_i, tx);
     }
 }

@@ -27,18 +27,25 @@
 
 // TODO: [grader] find max modif
 
+/*
+make build-libs
+gdb ./grading 
+run 453 ../313202.so ../reference.so
+*/
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdatomic.h>
 
 #include "shared-lock.h"
+#include "lock.h"
 
-#define MAX_SEGMENTS 2 << 16
-#define MAX_WORDS 2 << 48
-#define MAX_MODIFIED_PER_EPOCH 2 << 11
-#define MAX_MODIFIED_PER_TX 2 << 9
-#define MAX_FREE_SEG 2 << 5
+#define MAX_SEGMENTS (2 << 16)
+#define MAX_WORDS (2 << 48)
+#define MAX_MODIFIED_PER_EPOCH (2 << 13)
+#define MAX_MODIFIED_PER_TX (2 << 9)
+#define MAX_FREE_SEG (2 << 5)
 
 typedef struct shared_mem shared_mem;
 typedef struct shared_mem_segment shared_mem_segment;
@@ -53,8 +60,7 @@ struct batcher
     size_t epoch;
     size_t remaining;
 
-    struct lock_t* block;
-    struct lock_t* remaining_lock;
+    struct lock_t block;
 };
 
 struct transaction_t
@@ -73,17 +79,16 @@ struct shared_mem_segment
     size_t size;
 
     access_set_t* access_sets;
-    void** readCopies; 
-    void** writeCopies;
+    void* readCopies; 
+    void* writeCopies;
 };
 
-// TODO: clear array at the end of epoch 
 struct modified_words_lock
 {
     size_t segment_indices[MAX_MODIFIED_PER_EPOCH];
     size_t word_indices[MAX_MODIFIED_PER_EPOCH];
     size_t size;
-    struct lock_t* lock;
+    struct lock_t lock;
 };
 
 
