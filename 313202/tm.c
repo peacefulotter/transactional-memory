@@ -40,9 +40,17 @@
 #include "access_set.h"
 #include "transaction.h"
 
- 
+bool leave_and_commit(shared_mem* mem, transaction_t* tx);
 bool read_word(shared_mem_segment seg, size_t w_i, void* read_to, transaction_t* tx, size_t word_size);
 bool write_word(shared_mem_segment seg, size_t w_i, const void* write_from, transaction_t* tx, size_t word_size);
+
+
+void abort_fail(shared_mem* mem, transaction_t* tx)
+{
+    transaction_abort(mem, tx);
+    leave_and_commit(mem, tx);
+    free(tx);
+}
 
 void print_mem(shared_mem* mem, transaction_t* tx)
 { 
@@ -301,6 +309,7 @@ bool read_word(shared_mem_segment seg, size_t w_i, void* read_to, transaction_t*
 
 
 
+
 /** [thread-safe] Read operation in the given transaction, source in the shared region and target in a private region.
  * @param shared Shared memory region associated with the transaction
  * @param tx     Transaction to use
@@ -316,7 +325,7 @@ bool tm_read(shared_t shared, tx_t tx, void const* source, size_t size, void* ta
     size_t s_i = get_segment_index(source);
     size_t base_w_i = get_word_index(source);
 
-    log_info(" [%p]  tm_read  start source=%p, (%zu, %zu)", tx, source, s_i, base_w_i);
+    log_info(" [%p]  tm_read  start, (%zu, %zu)", tx, s_i, base_w_i);
 
     size_t a = mem->align;
     shared_mem_segment seg = mem->segments[s_i];
@@ -328,9 +337,7 @@ bool tm_read(shared_t shared, tx_t tx, void const* source, size_t size, void* ta
         {
             log_fatal(" [%p] read failed", tx);
             // word_print(mem, transaction, seg, w_i);
-            transaction_abort(mem, transaction);
-            leave_and_commit(mem, transaction);
-            free(transaction);
+            abort_fail(mem, transaction);
             return false;
         }
 
@@ -352,7 +359,7 @@ bool write_word(shared_mem_segment seg, size_t w_i, const void* src, transaction
     return false;
 }
 
-void write_word_main(shared_mem* mem, void* source, size_t s_i, size_t w_i, transaction_t* tx, size_t a)
+bool write_word_main(shared_mem* mem, void const* source, size_t s_i, size_t w_i, transaction_t* tx, size_t a)
 {
     shared_mem_segment seg = mem->segments[s_i];
 
@@ -360,14 +367,13 @@ void write_word_main(shared_mem* mem, void* source, size_t s_i, size_t w_i, tran
     {
         log_fatal(" [%p] write failed", tx);
         // word_print(mem, transaction, seg, w_i);
-        transaction_abort(mem, tx);
-        leave_and_commit(mem, tx);
-        free(tx);
-        return false;
+        abort_fail(mem, tx);
+        return true;
     }
 
     size_t idx = word_save_write_modif(mem, s_i, w_i);
     transaction_register_write_word(tx, idx);
+    return false;
 }
 
 /** [thread-safe] Write operation in the given transaction, source in a private region and target in the shared region.
@@ -391,10 +397,13 @@ bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size, void* t
     size_t a = mem->align;
 
     if ( unlikely( size > a ) )
+    {
         for (size_t offset = 0; offset < size / a; offset++)
-            write_word_main(mem, source + offset * a, s_i, base_w_i + offset, ts, a);
-    else
-        write_word_main(mem, source, s_i, base_w_i, ts, a);
+            if ( write_word_main(mem, source + offset * a, s_i, base_w_i + offset, ts, a) )
+                return false;
+    }
+    else if ( write_word_main(mem, source, s_i, base_w_i, ts, a) )
+        return false;
 
     return true;
 }
@@ -414,7 +423,7 @@ alloc_t tm_alloc(shared_t shared, tx_t tx, size_t size, void** target) {
 
     if ( segment_alloc(mem, size) )
     {
-        batcher_leave(mem->batcher, transaction);
+        abort_fail(mem, transaction);
         return nomem_alloc;
     }
 

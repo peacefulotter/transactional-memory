@@ -11,7 +11,7 @@
 #define DOUBLE_READ_STATE 2
 #define WRITE_STATE 3
 #define INVALID_STATE 4
-
+    
 #define SHIFT 8
 
 #define as_format(tx, as) (((size_t) tx) << SHIFT | as)
