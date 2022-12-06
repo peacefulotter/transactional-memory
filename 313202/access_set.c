@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdatomic.h>
 
-#include "tm.h"
+#include "mem.h"
 #include "access_set.h"
 #include "vec.h"
 #include "logger.h"

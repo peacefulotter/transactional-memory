@@ -171,13 +171,16 @@ private:
                 for (decltype(count) i = 0; i < segment_count; ++i) {
                     Balance local = segment.accounts[i];
                     if (unlikely(local < 0)) // If one account has a negative balance, there's a consistency issue.
+                    {
+                        ::std::cerr << "\n\n////////// CUSTOM /////////// balance < 0" << ::std::endl;
                         return false;
+                    }
                     sum += local;
                 }
                 start = segment.next; // Accounts are stored in linked segments, we move to the next one.
             }
             nbaccounts = count;
-            // ::std::cerr << "\n\n////////// CUSTOM /////////// count: " << count << " sum: " << sum << "\n\n" << ::std::endl;
+            ::std::cerr << "\n\n////////// CUSTOM /////////// count: " << count << ", sum: " << sum << ", shoud_be: " << static_cast<Balance>(init_balance * count) << "\n\n" << ::std::endl;
             return sum == static_cast<Balance>(init_balance * count); // Consistency check: no money should ever be destroyed or created out of thin air.
         });
     }

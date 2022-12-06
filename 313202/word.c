@@ -9,7 +9,7 @@
 #include "access_set.h"
 #include "vec.h"
 #include "logger.h"
-#include "tm.h"
+#include "mem.h"
 #include "lock.h"
 
 size_t format( void* src, size_t size )

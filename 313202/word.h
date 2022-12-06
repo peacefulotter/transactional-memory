@@ -1,6 +1,6 @@
 
 
-#include "tm.h"
+#include "mem.h"
 
 size_t word_save_write_modif(shared_mem* mem, size_t s_i, size_t w_i);
 size_t word_save_read_modif(shared_mem* mem, size_t s_i, size_t w_i);

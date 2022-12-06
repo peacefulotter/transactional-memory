@@ -273,10 +273,10 @@ int main(int argc, char** argv) {
         // auto const nbaccounts    = 32 * nbworkers;
         // auto const expnbaccounts = 256 * nbworkers;
 
-        auto const nbworkers = 2;
-        auto const nbtxperwrk    = 20ul;
-        auto const nbaccounts    = 10;
-        auto const expnbaccounts = 20;
+        auto const nbworkers = 8;
+        auto const nbtxperwrk    = 200ul;
+        auto const nbaccounts    = 100;
+        auto const expnbaccounts = 256;
 
         
         auto const init_balance  = 100ul;

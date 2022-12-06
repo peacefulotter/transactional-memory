@@ -74,6 +74,6 @@ vec_size_t vector_size(vector vec);
 
 vec_size_t vector_get_alloc(vector vec);
 
-void vector_print(vector vec);
+// void vector_print(vector vec);
 
 #endif /* vec_h */

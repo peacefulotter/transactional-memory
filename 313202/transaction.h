@@ -1,6 +1,7 @@
 
 #pragma once
 
+#include "mem.h"
 #include "tm.h"
 
 tx_t transaction_init(shared_mem* mem, bool is_ro);

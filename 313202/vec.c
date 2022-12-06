@@ -120,12 +120,12 @@ vector _vector_copy(vector vec, vec_type_t type_size)
 	return (void*)&v->buff;
 }
 
-void vector_print(vector vec)
-{
-	vector_data* vec_data = vector_get_data(vec);
-	for (size_t i = 0; i < vec_data->length; i++)
-	{
-		printf("%s, ", vec_data->buff[i]);
-	}
-	printf("\n");
-}
+// void vector_print(vector vec)
+// {
+// 	vector_data* vec_data = vector_get_data(vec);
+// 	for (size_t i = 0; i < vec_data->length; i++)
+// 	{
+// 		printf("%s, ", vec_data->buff[i]);
+// 	}
+// 	printf("\n");
+// }

@@ -3,11 +3,9 @@
 #include <stdlib.h>
 #include <stdatomic.h>
 
+#include "mem.h"
 #include "macros.h"
-#include "vec.h"
-#include "segment.h"
 #include "word.h"
-#include "access_set.h"
 #include "logger.h"
 #include "virtual.h"
 

@@ -29,6 +29,7 @@
 
 // Internal headers
 #include "tm.h"
+#include "mem.h"
 #include "macros.h"
 #include "word.h"
 #include "batcher.h"
@@ -45,7 +46,6 @@ bool write_word(shared_mem_segment seg, size_t w_i, const void* write_from, tran
 
 void print_mem(shared_mem* mem, transaction_t* tx)
 { 
-    return;
     log_debug("=====================================");
     log_debug("mem.align: %zu", mem->align);
     size_t s = atomic_load(&mem->allocated_segments);
@@ -80,7 +80,7 @@ void print_mem(shared_mem* mem, transaction_t* tx)
 **/
 shared_t tm_create(size_t size, size_t align) 
 {
-    log_set_quiet(true);
+    // log_set_quiet(true);
 
     log_info("===== tm_create start size: %zu, align: %zu", size, align);
     shared_mem* mem = malloc(sizeof(shared_mem));
@@ -334,7 +334,7 @@ bool tm_read(shared_t shared, tx_t tx, void const* source, size_t size, void* ta
             return false;
         }
 
-        word_save_read_modif(mem, s_i, w_i); // size_t idx =
+        word_save_read_modif(mem, s_i, w_i);
     }
 
     return true;
@@ -352,6 +352,24 @@ bool write_word(shared_mem_segment seg, size_t w_i, const void* src, transaction
     return false;
 }
 
+void write_word_main(shared_mem* mem, void* source, size_t s_i, size_t w_i, transaction_t* tx, size_t a)
+{
+    shared_mem_segment seg = mem->segments[s_i];
+
+    if ( !write_word(seg, w_i, source, tx, a) ) 
+    {
+        log_fatal(" [%p] write failed", tx);
+        // word_print(mem, transaction, seg, w_i);
+        transaction_abort(mem, tx);
+        leave_and_commit(mem, tx);
+        free(tx);
+        return false;
+    }
+
+    size_t idx = word_save_write_modif(mem, s_i, w_i);
+    transaction_register_write_word(tx, idx);
+}
+
 /** [thread-safe] Write operation in the given transaction, source in a private region and target in the shared region.
  * @param shared Shared memory region associated with the transaction
  * @param tx     Transaction to use
@@ -363,7 +381,7 @@ bool write_word(shared_mem_segment seg, size_t w_i, const void* src, transaction
 bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size, void* target) 
 {
     shared_mem* mem = (shared_mem*) shared;
-    transaction_t* transaction = (transaction_t*) tx;
+    transaction_t* ts = (transaction_t*) tx;
 
     size_t s_i = get_segment_index(target);
     size_t base_w_i = get_word_index(target); 
@@ -371,30 +389,12 @@ bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size, void* t
     log_info(" [%p]  tm_write  target=(%zu, %zu), writing=%zu, size: %zu", tx, s_i, base_w_i, *((size_t*)(source)), size);
 
     size_t a = mem->align;
-    shared_mem_segment seg = mem->segments[s_i];
 
-    // TODO: for loop unecessary cause size always = 8
-    for (size_t offset = 0; offset < size / a; offset++)
-    {
-        size_t w_i = base_w_i + offset;
-        if ( s_i == 0 && w_i == 1)
-        {
-            log_error("[%p] %zu, %zu,   %zu", tx, s_i ,w_i, *((size_t*)(source + offset * a)))
-        }
-
-        if ( !write_word(seg, w_i, source + offset * a, transaction, a) ) 
-        {
-            log_fatal(" [%p] write failed", tx);
-            // word_print(mem, transaction, seg, w_i);
-            transaction_abort(mem, transaction);
-            leave_and_commit(mem, transaction);
-            free(transaction);
-            return false;
-        }
-
-        size_t idx = word_save_write_modif(mem, s_i, w_i);
-        transaction_register_write_word(transaction, idx);
-    }
+    if ( unlikely( size > a ) )
+        for (size_t offset = 0; offset < size / a; offset++)
+            write_word_main(mem, source + offset * a, s_i, base_w_i + offset, ts, a);
+    else
+        write_word_main(mem, source, s_i, base_w_i, ts, a);
 
     return true;
 }
@@ -408,8 +408,6 @@ bool tm_write(shared_t shared, tx_t tx, void const* source, size_t size, void* t
 **/
 alloc_t tm_alloc(shared_t shared, tx_t tx, size_t size, void** target) {
     // log_debug(" [%p]  tm_alloc  start", tx);
-
-    // TODO: abort_alloc in which case?
 
     shared_mem* mem = (shared_mem*) shared;
     transaction_t* transaction = (transaction_t*) tx;
@@ -434,15 +432,13 @@ alloc_t tm_alloc(shared_t shared, tx_t tx, size_t size, void** target) {
  * @return Whether the whole transaction can continue
 **/
 bool tm_free(shared_t unused(shared), tx_t tx, void* target) {
-    // TODO: never called
-    printf("[%p]  tm_free  start target=%p \n", tx, target);
+    log_debug("[%p]  tm_free  start target=%p \n", tx, target);
 
-    // TODO: retrieve segment from target?
     shared_mem_segment* segment = (shared_mem_segment*) target;
     transaction_t* ts = (transaction_t*) tx;
 
     ts->seg_free[ts->seg_free_size++] = segment;
 
-    printf("tm_free end\n");
+    log_debug("tm_free end\n");
     return true;
 }

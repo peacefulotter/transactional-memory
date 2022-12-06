@@ -19,14 +19,15 @@ OBJS     := $(SRCS_C:%=%.o) $(SRCS_CXX:%=%.o)
 CC       := $(CC)
 # c11
 # -O2
+# TODO -Ofast
 CCFLAGS  := -Wall -Wextra -Wfatal-errors -std=gnu99 $(foreach INCLUDE_DIR,$(INCLUDE_DIRS),-I$(INCLUDE_DIR))
 CXX      := $(CXX)
 CXXFLAGS := -Wall -Wextra -Wfatal-errors -std=c++17 $(foreach INCLUDE_DIR,$(INCLUDE_DIRS),-I$(INCLUDE_DIR))
 LD       := $(if $(SRCS_CXX),$(CXX),$(CC))
 LDFLAGS  :=
 LDLIBS   := -ldl -lpthread
-LDFLAGS += -fsanitize=address -fno-omit-frame-pointer -Wno-format-security
-CFLAGS  += -fsanitize=address
+LDFLAGS += # -fsanitize=address -fno-omit-frame-pointer -Wno-format-security
+CFLAGS  += # -fsanitize=address
 
 LIB_DIRS := $(filter-out ../include/ ../grading/ ../playground/ ../template/ ../sync-examples/,$(filter-out $(wildcard ../*),$(wildcard ../*/)))
 LIB_SOS  := $(patsubst %/,%.so,$(filter-out ../reference/,$(LIB_DIRS)))
@@ -34,6 +35,7 @@ LIB_SOS  := $(patsubst %/,%.so,$(filter-out ../reference/,$(LIB_DIRS)))
 .PHONY: build build-libs clean clean-libs run
 
 build: $(BIN)
+# TODO: --use-asan
 build-libs:
 	@$(foreach DIR,$(LIB_DIRS),make -C $(DIR) build; )
 clean:

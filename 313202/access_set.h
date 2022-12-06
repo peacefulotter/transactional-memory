@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stdatomic.h>
 
-#include "tm.h"
+#include "mem.h"
 
 #define INIT_STATE 0
 #define READ_STATE 1

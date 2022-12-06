@@ -3,7 +3,7 @@
 #include <pthread.h>
 #include <string.h>
 
-#include "tm.h"
+#include "mem.h"
 #include "lock.h"
 
 batcher* get_batcher();

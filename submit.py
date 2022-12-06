@@ -51,6 +51,9 @@ max_codesize = 100000 # Max code size (in bytes) before AND after deflate (the s
 # ---------------------------------------------------------------------------- #
 # Command line
 
+# from signal import signal, SIGPIPE, SIG_DFL
+# signal(SIGPIPE,SIG_DFL)
+
 # Description
 parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
 parser.add_argument("--uuid",

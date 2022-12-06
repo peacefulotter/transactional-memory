@@ -1,12 +1,12 @@
 #include <stdlib.h>
 #include <stdatomic.h>
 
+#include "mem.h"
 #include "macros.h"
 #include "batcher.h"
 #include "lock.h"
-#include "shared-lock.h"
 #include "logger.h"
-#include "tm.h"
+
 
 batcher* get_batcher()
 {
