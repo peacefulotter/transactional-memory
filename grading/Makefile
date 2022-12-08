@@ -26,8 +26,8 @@ CXXFLAGS := -Wall -Wextra -Wfatal-errors -std=c++17 $(foreach INCLUDE_DIR,$(INCL
 LD       := $(if $(SRCS_CXX),$(CXX),$(CC))
 LDFLAGS  :=
 LDLIBS   := -ldl -lpthread
-LDFLAGS += -fsanitize=address -fno-omit-frame-pointer -Wno-format-security
-CFLAGS  += -fsanitize=address
+LDFLAGS += # -fsanitize=address -fno-omit-frame-pointer -Wno-format-security
+CFLAGS  += # -fsanitize=address
 
 LIB_DIRS := $(filter-out ../include/ ../grading/ ../playground/ ../template/ ../sync-examples/,$(filter-out $(wildcard ../*),$(wildcard ../*/)))
 LIB_SOS  := $(patsubst %/,%.so,$(filter-out ../reference/,$(LIB_DIRS)))
@@ -43,7 +43,8 @@ clean:
 clean-libs:
 	@$(foreach DIR,$(LIB_DIRS),make -C $(DIR) clean; )
 run: $(BIN)
-	$(BIN) 453 $(LIB_SOS) ../reference.so
+	$(BIN) 453 ../313202.so ../reference.so 
+# $(LIB_SOS)
 
 define BUILD_C
 %.$(1).o: %.$(1) $$(HDRS_C) Makefile

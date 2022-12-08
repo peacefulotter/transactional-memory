@@ -70,8 +70,8 @@ bool batcher_leave(batcher* b, transaction_t* tx)
     bool last = --b->remaining == 0;
     // log_info("[%p]  batch_leave 1 remaining=%u, last=%u, ro=%u", tx, b->remaining, last, tx->read_only);
 
-    if ( tx->read_only )
-        batcher_block_entry(b);
+    // if ( tx->read_only )
+    batcher_block_entry(b);
 
     log_info("[%p]  batch_leave  remaining=%u, last=%u", tx, b->remaining, last);
 

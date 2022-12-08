@@ -16,7 +16,7 @@
 
 #define LOG_VERSION "0.1.0"
 #define ENABLE true
-#define ENABLE_ERROR false
+#define ENABLE_ERROR true
 
 typedef struct {
   va_list ap;
