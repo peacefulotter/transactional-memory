@@ -37,7 +37,7 @@ struct batcher
     size_t epoch;
     size_t remaining;
 
-    struct lock_t block;
+    struct lock_t* block;
 };
 
 struct transaction_t
@@ -56,6 +56,7 @@ struct transaction_t
 struct shared_mem_segment
 {
     size_t size;
+    bool free;
 
     access_set_t* access_sets;
     void* readCopies; 
@@ -67,7 +68,7 @@ struct modified_words_lock
     size_t segment_indices[MAX_MODIFIED_PER_EPOCH];
     size_t word_indices[MAX_MODIFIED_PER_EPOCH];
     size_t size;
-    struct lock_t lock;
+    struct lock_t* lock;
 };
 
 

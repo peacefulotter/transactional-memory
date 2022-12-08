@@ -26,8 +26,8 @@ CXXFLAGS := -Wall -Wextra -Wfatal-errors -std=c++17 $(foreach INCLUDE_DIR,$(INCL
 LD       := $(if $(SRCS_CXX),$(CXX),$(CC))
 LDFLAGS  :=
 LDLIBS   := -ldl -lpthread
-LDFLAGS += # -fsanitize=address -fno-omit-frame-pointer -Wno-format-security
-CFLAGS  += # -fsanitize=address
+LDFLAGS += -fsanitize=address -fno-omit-frame-pointer -Wno-format-security
+CFLAGS  += -fsanitize=address
 
 LIB_DIRS := $(filter-out ../include/ ../grading/ ../playground/ ../template/ ../sync-examples/,$(filter-out $(wildcard ../*),$(wildcard ../*/)))
 LIB_SOS  := $(patsubst %/,%.so,$(filter-out ../reference/,$(LIB_DIRS)))

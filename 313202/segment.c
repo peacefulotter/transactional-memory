@@ -15,6 +15,7 @@ bool segment_alloc(shared_mem* mem, size_t size)
     shared_mem_segment seg; 
 
     seg.size = size;
+    seg.free = false;
     seg.access_sets = calloc(size, sizeof(access_set_t)); 
     seg.writeCopies = calloc(size, mem->align);  
     seg.readCopies = calloc(size, mem->align);
@@ -32,6 +33,7 @@ bool segment_alloc(shared_mem* mem, size_t size)
     }
 
     mem->segments[mem->allocated_segments++] = seg;
+
     return false;
 }
 
@@ -46,9 +48,10 @@ size_t get_word_index( void const* addr )
     return (size_t) WORD_INDEX((uintptr_t) addr);
 }
 
-void segment_free(shared_mem_segment seg)
+void segment_free(shared_mem_segment* seg)
 {
-    free(seg.access_sets);
-    free(seg.writeCopies);
-    free(seg.readCopies);
+    free(seg->access_sets);
+    free(seg->writeCopies);
+    free(seg->readCopies);
+    seg->free = true;
 }

@@ -13,10 +13,11 @@
 #define INVALID_STATE 4
     
 #define SHIFT 8
+#define STATE_MASK 0xFF
 
-#define as_format(tx, as) (((size_t) tx) << SHIFT | as)
-#define as_extract_tx(as) (size_t) as >> SHIFT
-#define as_extract_state(as) (((size_t) as) & 0xFF)
+#define as_format(tx, as) ( (((size_t) tx) << SHIFT) | as )
+#define as_extract_tx(as) ( (size_t) as >> SHIFT )
+#define as_extract_state(as) ( ((size_t) as) & STATE_MASK ) 
 
 #define load_tx(as) ((size_t) as_extract_tx( atomic_load(as) ))
 #define load_state(as) ((char) as_extract_state( atomic_load(as) ))
@@ -26,5 +27,4 @@ char as_read_op(access_set_t* as, transaction_t* tx);
 bool as_write_op(access_set_t* as, transaction_t* tx);
 void as_reset(access_set_t* as);
 void as_print(access_set_t* as, transaction_t* tx);
-void as_revert_read(access_set_t* as, transaction_t* tx);
 void as_revert_write(access_set_t* as, transaction_t* tx);

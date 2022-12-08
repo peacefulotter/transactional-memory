@@ -37,25 +37,24 @@ void transaction_abort(shared_mem* mem, transaction_t* tx)
     // TODO: don't care if very slow 
     // if more than 2>>16 alloc -> find free segments
 
-    log_debug("[%p] aborting", tx);
-    
-    lock_acquire(&(mem->batcher->block));
+    lock_acquire(mem->batcher->block);
     batcher_block_entry(mem->batcher);
-    lock_release(&(mem->batcher->block));
+    lock_release(mem->batcher->block);
 
     if ( tx->read_only )
         return;
 
     size_t* w = tx->write_words_indices;
     size_t s = tx->write_size;
-    // log_debug("[%p] Abort - reverting %zu words", tx, s);
+    // log_debug("[%p] Abort - reverting %zu written words", tx, s);
     for (size_t i = 0; i < s; i++)
     {
         size_t idx = w[i];
         size_t s_i = mem->modif_write.segment_indices[idx];
         size_t w_i = mem->modif_write.word_indices[idx];
         shared_mem_segment seg = mem->segments[s_i];
-        log_error("[%p] idx: %zu, s_i: %zu, w_i: %zu", tx, idx, s_i, w_i);
+        // log_error("[%p] idx: %zu, s_i: %zu, w_i: %zu", tx, idx, s_i, w_i);
         as_revert_write(seg.access_sets + w_i, tx);
     }
+    tx->write_size = 0;
 }

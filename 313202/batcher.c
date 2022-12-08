@@ -18,7 +18,8 @@ batcher* get_batcher()
     b->epoch = 0;
     b->remaining = 0;
 
-    if (unlikely( !lock_init(&(b->block)) ))
+    b->block = malloc(sizeof(struct lock_t));
+    if (unlikely( b->block == NULL || !lock_init(b->block) ))
     {
         free(b);
         return NULL;
@@ -35,16 +36,16 @@ size_t batcher_epoch(batcher* batch)
 void batcher_enter(batcher* b, transaction_t* tx)
 {
     // log_info("[%p]  batch_enter  blocked=%u", tx, b->blocked);
-    lock_acquire(&(b->block));
+    lock_acquire(b->block);
     while ( b->blocked )
     {
         // log_info("[%p]  batch_enter  WAITING", tx);
-        lock_wait(&(b->block));
+        lock_wait(b->block);
     }
     
     b->remaining++;
-    lock_release(&(b->block));
-    // log_info("[%p]  batch_enter  ENTERING, remaining=%zu", tx, b->remaining);
+    log_info("[%p]  batch_enter  ENTERING, remaining=%zu", tx, b->remaining);
+    lock_release(b->block);
 }
 
 /**
@@ -64,13 +65,12 @@ void batcher_block_entry(batcher* b)
  */
 bool batcher_leave(batcher* b, transaction_t* tx)
 {
-    lock_acquire(&(b->block));
+    lock_acquire(b->block);
 
-    b->remaining--;
-    bool last = b->remaining == 0;
-    log_info("[%p]  batch_leave 1 remaining=%u, last=%u, ro=%u", tx, b->remaining, last, tx->read_only);
+    bool last = --b->remaining == 0;
+    // log_info("[%p]  batch_leave 1 remaining=%u, last=%u, ro=%u", tx, b->remaining, last, tx->read_only);
 
-    if ( tx->read_only || (!tx->read_only && last) )
+    if ( tx->read_only )
         batcher_block_entry(b);
 
     log_info("[%p]  batch_leave  remaining=%u, last=%u", tx, b->remaining, last);
@@ -83,13 +83,18 @@ void batcher_wake_up(batcher* b)
     b->epoch++;
     // log_error(" >>>>>>   batch_wake_up  epoch=%zu", b->epoch);
     b->blocked = false;
-    lock_release(&(b->block));
-    lock_wake_up(&(b->block));
+    lock_release(b->block);
+    lock_wake_up(b->block);
 }
 
 void batcher_free(batcher* b)
 {
-    lock_cleanup(&(b->block));
+    if (likely( b->block != NULL ))
+    {
+        lock_cleanup(b->block);
+        free(b->block);
+    }
+    
     free(b);
 }
 

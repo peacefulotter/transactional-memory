@@ -27,9 +27,7 @@ char as_read_op(access_set_t* as, transaction_t* tx)
 {
     size_t init_state = INIT_STATE; 
     size_t read_same_tx = as_format(tx, READ_STATE); 
-    size_t read_other_tx = as_format(as_extract_tx(init_state), READ_STATE);
-    size_t double_read_other_tx = as_format(as_extract_tx(init_state), DOUBLE_READ_STATE);
-    size_t write_same_tx = as_format(as_extract_tx(read_other_tx), WRITE_STATE);
+    size_t write_same_tx = as_format(tx, WRITE_STATE);
 
     // 0 -> 1 (init, _) -> (read, tx)
     if ( atomic_compare_exchange_strong(as, &init_state, read_same_tx) )
@@ -44,11 +42,16 @@ char as_read_op(access_set_t* as, transaction_t* tx)
         return DOUBLE_READ_STATE;
 
     // 1 -> 2 (read, tx) -> (d_read, tx")
-    else if ( atomic_compare_exchange_strong(as, &read_other_tx, double_read_other_tx ) )
+    size_t set = atomic_load(as);
+    if ( 
+        as_extract_state(set) == READ_STATE && 
+        as_extract_tx(set) != ((size_t) tx) &&
+        atomic_compare_exchange_strong(as, &set, as_format(tx, DOUBLE_READ_STATE)) 
+    )
         return DOUBLE_READ_STATE;
 
     // 3 -> 3 (write, tx) -> (write, tx)
-    else if ( atomic_compare_exchange_strong(as, &read_other_tx, write_same_tx )  )
+    else if ( set == write_same_tx )
         return WRITE_STATE;
 
     // read not allowed - pretend to be in invalid state
