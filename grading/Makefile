@@ -26,6 +26,7 @@ CXXFLAGS := -Wall -Wextra -Wfatal-errors -std=c++17 $(foreach INCLUDE_DIR,$(INCL
 LD       := $(if $(SRCS_CXX),$(CXX),$(CC))
 LDFLAGS  :=
 LDLIBS   := -ldl -lpthread
+
 LDFLAGS += # -fsanitize=address -fno-omit-frame-pointer -Wno-format-security
 CFLAGS  += # -fsanitize=address
 
@@ -35,7 +36,6 @@ LIB_SOS  := $(patsubst %/,%.so,$(filter-out ../reference/,$(LIB_DIRS)))
 .PHONY: build build-libs clean clean-libs run
 
 build: $(BIN)
-# TODO: --use-asan
 build-libs:
 	@$(foreach DIR,$(LIB_DIRS),make -C $(DIR) build; )
 clean:

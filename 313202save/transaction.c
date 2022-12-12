@@ -25,12 +25,12 @@ tx_t transaction_init(shared_mem* mem, bool is_ro)
     return (tx_t) tx;
 }
 
-void transaction_register_write_word(transaction_t* tx, size_t idx)
+void tx_register_write_word(transaction_t* tx, size_t idx)
 {
     tx->write_words_indices[tx->write_size++] = idx;
 }
 
-void transaction_abort(shared_mem* mem, transaction_t* tx)
+void tx_abort(shared_mem* mem, transaction_t* tx)
 {
     // TODO: free allocated segments
   

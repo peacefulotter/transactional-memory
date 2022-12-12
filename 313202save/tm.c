@@ -49,7 +49,7 @@ void abort_fail(shared_mem* mem, transaction_t* tx)
 {
     // TODO: free the allocated segments
     // log_fatal("[%p] abort_fail", tx);
-    transaction_abort(mem, tx);
+    tx_abort(mem, tx);
     leave_and_commit(mem, tx);
     // free(tx);
 }
@@ -391,7 +391,7 @@ bool write_word_main(shared_mem* mem, void const* source, size_t s_i, size_t w_i
     // word_print(mem, tx, seg, w_i);
 
     size_t idx = word_save_write_modif(mem, s_i, w_i);
-    transaction_register_write_word(tx, idx);
+    tx_register_write_word(tx, idx);
     return false;
 }
 
