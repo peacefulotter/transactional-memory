@@ -24,8 +24,8 @@ LD       := $(if $(SRCS_CXX),$(CXX),$(CC))
 LDFLAGS  := -shared
 LDLIBS   := 
 
-LDFLAGS += # -fsanitize=address -fno-omit-frame-pointer -Wno-format-security
-CFLAGS  += # -fsanitize=address
+LDFLAGS += -fsanitize=address -fno-omit-frame-pointer -Wno-format-security
+CFLAGS  += -fsanitize=address
 
 .PHONY: build clean
 

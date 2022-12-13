@@ -16,7 +16,7 @@
 
 #define LOG_VERSION "0.1.0"
 #define ENABLE false
-#define ENABLE_ERROR false
+#define ENABLE_ERROR true
 
 typedef struct {
   va_list ap;
@@ -33,12 +33,12 @@ typedef void (*log_LockFn)(bool lock, void *udata);
 
 enum { LOG_TRACE, LOG_DEBUG, LOG_INFO, LOG_WARN, LOG_ERROR, LOG_FATAL };
 
-#define log_trace(...) ENABLE ? log_log(LOG_TRACE, __FILE__, __LINE__, __VA_ARGS__) : NULL;
-#define log_debug(...) ENABLE ? log_log(LOG_DEBUG, __FILE__, __LINE__, __VA_ARGS__) : NULL;
-#define log_info(...)  ENABLE ? log_log(LOG_INFO,  __FILE__, __LINE__, __VA_ARGS__) : NULL;
-#define log_warn(...)  ENABLE ? log_log(LOG_WARN,  __FILE__, __LINE__, __VA_ARGS__) : NULL;
-#define log_error(...) (ENABLE_ERROR || ENABLE) ? log_log(LOG_ERROR, __FILE__, __LINE__, __VA_ARGS__) : NULL;
-#define log_fatal(...) ENABLE ? log_log(LOG_FATAL, __FILE__, __LINE__, __VA_ARGS__) : NULL;
+#define log_trace(...) (ENABLE ? log_log(LOG_TRACE, __FILE__, __LINE__, __VA_ARGS__) : NULL);
+#define log_debug(...) (ENABLE ? log_log(LOG_DEBUG, __FILE__, __LINE__, __VA_ARGS__) : NULL);
+#define log_info(...)  (ENABLE ? log_log(LOG_INFO,  __FILE__, __LINE__, __VA_ARGS__) : NULL);
+#define log_warn(...)  (ENABLE ? log_log(LOG_WARN,  __FILE__, __LINE__, __VA_ARGS__) : NULL);
+#define log_error(...) (ENABLE_ERROR ? log_log(LOG_ERROR, __FILE__, __LINE__, __VA_ARGS__) : NULL);
+#define log_fatal(...) (ENABLE ? log_log(LOG_FATAL, __FILE__, __LINE__, __VA_ARGS__) : NULL);
 
 const char* log_level_string(int level);
 void log_set_lock(log_LockFn fn, void *udata);

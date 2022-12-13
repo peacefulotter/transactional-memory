@@ -45,7 +45,7 @@ size_t get_segment_index( void const* addr )
 
 size_t get_word_index( void const* addr )
 {
-    return (size_t) WORD_INDEX((uintptr_t) addr);
+    return (size_t) WORD_INDEX_ALIGN((uintptr_t) addr);
 }
 
 void segment_free(shared_mem_segment* seg)
