@@ -41,7 +41,7 @@ size_t word_save_write_modif(shared_mem* mem, size_t s_i, size_t w_i)
     return idx;
 }
 
-size_t word_print(shared_mem* mem, transaction_t* tx, shared_mem_segment seg, size_t w_i)
+size_t word_print(shared_mem* mem, transaction_t* tx, segment seg, size_t w_i)
 {
     size_t s = atomic_load(&seg.access_sets[w_i]);
     void* read = seg.readCopies + w_i * mem->align;

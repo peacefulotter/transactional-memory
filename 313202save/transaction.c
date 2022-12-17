@@ -52,7 +52,7 @@ void tx_abort(shared_mem* mem, transaction_t* tx)
         size_t idx = w[i];
         size_t s_i = mem->modif_write.segment_indices[idx];
         size_t w_i = mem->modif_write.word_indices[idx];
-        shared_mem_segment seg = mem->segments[s_i];
+        segment seg = mem->segments[s_i];
         // log_error("[%p] idx: %zu, s_i: %zu, w_i: %zu", tx, idx, s_i, w_i);
         as_revert_write(seg.access_sets + w_i, tx);
     }

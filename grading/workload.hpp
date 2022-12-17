@@ -381,8 +381,10 @@ public:
         // Finally, a last transaction runs in the first thread to check that the counter reached 0 (i.e., each transaction decreased it by 1.).
         barrier.sync();
         if (uid == 0) {
+            ::std::cerr << "\n\n////////// CUSTOM /////////// last tx" << ::std::endl;
             auto correct = transactional(tm, Transaction::Mode::read_only, [&](Transaction& tx) {
                 Shared<size_t> counter{tx, tm.get_start()};
+                ::std::cerr << "\n\n////////// CUSTOM /////////// last counter: " << counter << ::std::endl;
                 return counter == 0;
             });
             if (unlikely(!correct))

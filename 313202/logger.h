@@ -15,7 +15,7 @@
 #include <time.h>
 
 #define LOG_VERSION "0.1.0"
-#define ENABLE false
+#define ENABLE true
 #define ENABLE_ERROR true
 
 typedef struct {

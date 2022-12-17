@@ -41,8 +41,8 @@
 #include "transaction.h"
 
 bool leave_and_commit(shared_mem* mem, transaction_t* tx);
-bool read_word(shared_mem_segment seg, size_t w_i, void* read_to, transaction_t* tx, size_t word_size);
-bool write_word(shared_mem_segment seg, size_t w_i, void const* write_from, transaction_t* tx, size_t word_size);
+bool read_word(segment seg, size_t w_i, void* read_to, transaction_t* tx, size_t word_size);
+bool write_word(segment seg, size_t w_i, void const* write_from, transaction_t* tx, size_t word_size);
 
 
 void abort_fail(shared_mem* mem, transaction_t* tx)
@@ -62,7 +62,7 @@ void print_mem(shared_mem* mem, transaction_t* tx)
     log_debug("mem.allocated_segments: %zu", s);
     for (size_t i = 0; i < s; i++)
     {
-        shared_mem_segment s = mem->segments[i];
+        segment s = mem->segments[i];
         log_debug("segment nb %zu, segment size: %zu", i, s.size);
         size_t sum = 0;
         size_t count = 0;
@@ -215,7 +215,7 @@ void commit( shared_mem* mem, transaction_t* tx )
     {
         size_t s_i = mem->modif_write.segment_indices[i];
         size_t w_i = mem->modif_write.word_indices[i];
-        shared_mem_segment seg = mem->segments[s_i];
+        segment seg = mem->segments[s_i];
 
         if ( ws > MAX_MODIFIED_PER_EPOCH - 3 )
         {
@@ -243,7 +243,7 @@ void commit( shared_mem* mem, transaction_t* tx )
     {
         size_t s_i = mem->modif_read.segment_indices[i];
         size_t w_i = mem->modif_read.word_indices[i];
-        shared_mem_segment seg = mem->segments[s_i];
+        segment seg = mem->segments[s_i];
         as_reset(seg.access_sets + w_i);
     }
     mem->modif_read.size = 0;
@@ -299,7 +299,7 @@ bool tm_end(shared_t shared, tx_t tx) {
     return committed;
 }
 
-bool read_word(shared_mem_segment seg, size_t w_i, void* read_to, transaction_t* tx, size_t align)
+bool read_word(segment seg, size_t w_i, void* read_to, transaction_t* tx, size_t align)
 {
     if ( tx->read_only )
         memcpy(read_to, seg.readCopies + w_i * align, align);
@@ -319,7 +319,7 @@ bool read_word(shared_mem_segment seg, size_t w_i, void* read_to, transaction_t*
 
 bool read_word_main(shared_mem* mem, void* target, size_t s_i, size_t w_i, transaction_t* tx, size_t a)
 {
-    shared_mem_segment seg = mem->segments[s_i];
+    segment seg = mem->segments[s_i];
 
     if ( !read_word(seg, w_i, target, tx, a) )
     {
@@ -365,7 +365,7 @@ bool tm_read(shared_t shared, tx_t tx, void const* source, size_t size, void* ta
 }
 
 
-bool write_word(shared_mem_segment seg, size_t w_i, void const* src, transaction_t* tx, size_t align)
+bool write_word(segment seg, size_t w_i, void const* src, transaction_t* tx, size_t align)
 {
     if ( as_write_op(seg.access_sets + w_i, tx) )
     {
@@ -378,7 +378,7 @@ bool write_word(shared_mem_segment seg, size_t w_i, void const* src, transaction
 
 bool write_word_main(shared_mem* mem, void const* source, size_t s_i, size_t w_i, transaction_t* tx, size_t a)
 {
-    shared_mem_segment seg = mem->segments[s_i];
+    segment seg = mem->segments[s_i];
 
     if ( !write_word(seg, w_i, source, tx, a) ) 
     {
@@ -463,7 +463,7 @@ alloc_t tm_alloc(shared_t shared, tx_t tx, size_t size, void** target) {
 bool tm_free(shared_t unused(shared), tx_t tx, void* target) {
     log_debug("[%p]  tm_free  start target=%p \n", tx, target);
 
-    shared_mem_segment* segment = (shared_mem_segment*) target;
+    segment* segment = (segment*) target;
     transaction_t* ts = (transaction_t*) tx;
 
     ts->seg_free[ts->seg_free_size++] = segment;

@@ -12,7 +12,7 @@
 
 bool segment_alloc(shared_mem* mem, size_t size)
 {
-    shared_mem_segment seg; 
+    segment seg; 
 
     seg.size = size;
     seg.free = false;
@@ -48,7 +48,7 @@ size_t get_word_index( void const* addr )
     return (size_t) WORD_INDEX_ALIGN((uintptr_t) addr);
 }
 
-void segment_free(shared_mem_segment* seg)
+void segment_free(segment* seg)
 {
     free(seg->access_sets);
     free(seg->writeCopies);

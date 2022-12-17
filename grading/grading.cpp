@@ -274,9 +274,9 @@ int main(int argc, char** argv) {
         // auto const expnbaccounts = 256 * nbworkers;
 
         auto const nbworkers = 8;
-        auto const nbtxperwrk    = 200ul;
-        auto const nbaccounts    = 100;
-        auto const expnbaccounts = 100;
+        auto const nbtxperwrk    = 20ul;
+        auto const nbaccounts    = 2;
+        auto const expnbaccounts = 2;
         
         auto const init_balance  = 100ul;
         auto const prob_long     = 0.5f;

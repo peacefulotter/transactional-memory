@@ -25,7 +25,7 @@ run 453 ../313202.so ../reference.so
 #define MAX_FREE_SEG (2 << 5)
 
 typedef struct shared_mem shared_mem;
-typedef struct shared_mem_segment shared_mem_segment;
+typedef struct segment segment;
 typedef struct transaction_t transaction_t;
 typedef struct batcher batcher;
 typedef atomic_size_t access_set_t;
@@ -50,10 +50,10 @@ struct transaction_t
 
     size_t seg_free_size;
     // to vec
-    shared_mem_segment* seg_free[MAX_FREE_SEG];
+    segment* seg_free[MAX_FREE_SEG];
 };
 
-struct shared_mem_segment
+struct segment
 {
     size_t size;
     bool free;
@@ -85,5 +85,5 @@ struct shared_mem
     struct modified_words_lock modif_write;
 
     atomic_int allocated_segments;
-    shared_mem_segment segments[MAX_SEGMENTS];
+    segment segments[MAX_SEGMENTS];
 };
