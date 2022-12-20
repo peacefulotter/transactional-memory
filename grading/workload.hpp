@@ -330,7 +330,7 @@ public:
      * @param uid Id of the thread to run the check
     **/
     virtual char const* check(Uid uid, Seed seed [[gnu::unused]]) const {
-        constexpr size_t nbtxperwrk = 100;
+        constexpr size_t nbtxperwrk = 2;
 
         barrier.sync();
         if (uid == 0) { // Only the first thread initializes the shared memory.
