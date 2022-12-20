@@ -15,11 +15,12 @@
 #include <time.h>
 
 #define LOG_VERSION "0.1.0"
-#define ENABLE true
-#define ENABLE_WORD true
-#define ENABLE_ERROR true
-#define ENABLE_TRACE true
-#define ENABLE_DEBUG true
+#define ENABLE false
+#define ENABLE_WORD false
+#define ENABLE_ERROR false
+#define ENABLE_TRACE false
+#define ENABLE_DEBUG false
+#define ENABLE_WARN false
 
 typedef struct {
   va_list ap;
@@ -39,7 +40,7 @@ enum { LOG_TRACE, LOG_DEBUG, LOG_INFO, LOG_WARN, LOG_ERROR, LOG_FATAL };
 #define log_trace(...) (ENABLE_TRACE ? log_log(LOG_TRACE, __FILE__, __LINE__, __VA_ARGS__) : NULL);
 #define log_debug(...) (ENABLE_DEBUG ? log_log(LOG_DEBUG, __FILE__, __LINE__, __VA_ARGS__) : NULL);
 #define log_info(...)  (ENABLE ? log_log(LOG_INFO,  __FILE__, __LINE__, __VA_ARGS__) : NULL);
-#define log_warn(...)  (ENABLE ? log_log(LOG_WARN,  __FILE__, __LINE__, __VA_ARGS__) : NULL);
+#define log_warn(...)  (ENABLE_WARN ? log_log(LOG_WARN,  __FILE__, __LINE__, __VA_ARGS__) : NULL);
 #define log_error(...) (ENABLE_ERROR ? log_log(LOG_ERROR, __FILE__, __LINE__, __VA_ARGS__) : NULL);
 #define log_fatal(...) (ENABLE ? log_log(LOG_FATAL, __FILE__, __LINE__, __VA_ARGS__) : NULL);
 

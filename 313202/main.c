@@ -1,7 +1,6 @@
-// TODO: not reloading
+
 // TODO: fix mem leak of 88 bytes (? where is it coming from)
 // 88 on single thread
-// double free on concurrency
 
 #include <stdatomic.h>
 #include <stdbool.h>
@@ -63,9 +62,8 @@
 #define INVALID_STATE 4
 #define BASE_TX_ID 1
 
-// TODO: shift = 3
-#define SHIFT 8 
-#define STATE_MASK 0xFF
+#define SHIFT 3
+#define STATE_MASK 0x7
 
 #define as_format(tx, as) (((tx->id) << SHIFT) | as)
 #define as_extract_tx(as) ((size_t)as >> SHIFT)
@@ -112,7 +110,7 @@ struct transaction_t
 {
     size_t id;
     bool read_only;
-    t_vec mod_words; // (s_i, w_i)
+    t_vec modif_words; // (s_i, w_i)
     t_vec free_segs;
     t_vec alloc_segs;
 };
@@ -121,18 +119,10 @@ struct segment
 {
     size_t size;
     int index;
-    atomic_bool free;
 
     access_set_t *access_sets;
     void *readCopies;
     void *writeCopies;
-};
-
-struct modified_words_lock
-{
-    // TODO: get min, average, max
-    t_vec indices; // size_t storing (seg_i, w_i);
-    struct lock_t *lock;
 };
 
 struct shared_mem
@@ -141,10 +131,14 @@ struct shared_mem
 
     batcher *batcher;
 
-    struct modified_words_lock modif_read;
-    struct modified_words_lock modif_write;
+    t_vec modif_words;
+    struct lock_t* modif_lock;
+
+    t_vec abort_words;
+    struct lock_t* abort_lock;
 
     t_vec seg_free;
+    struct lock_t* seg_lock;
 
     atomic_int allocated_segments;
     segment segments[MAX_SEGMENTS];
@@ -176,19 +170,18 @@ static void lock_wake_up(struct lock_t *lock);
 static bool segment_alloc(shared_mem *mem, size_t size);
 static int get_segment_index(void const *addr);
 static size_t get_word_index(void const *addr, size_t align);
-static void segment_set_free(shared_mem *mem, int s_i);
 static void segment_free(shared_mem *mem, int s_i);
 
 // Transaction
 static bool tx_mod_word(transaction_t *tx, void *addr);
 
 static void commit(shared_mem *mem, transaction_t *tx);
-static void leave_and_commit(shared_mem *mem, transaction_t *tx, bool is_abort);
+static void leave_and_commit(shared_mem *mem, transaction_t *tx);
 static bool read_word(segment seg, size_t w_i, void *read_to, transaction_t *tx, size_t align);
 static bool write_word(segment seg, size_t w_i, void const *src, transaction_t *tx, size_t align);
 
-static bool word_save_read_modif(shared_mem *mem, void const *source);
-static bool word_save_write_modif(shared_mem *mem, void *target);
+// static bool word_save_read_modif(shared_mem *mem, transaction_t* tx, void const *source);
+// static bool word_save_write_modif(shared_mem *mem, void *target);
 static void word_print(shared_mem *mem, transaction_t *tx, int s_i, size_t w_i);
 
 #define _word_print(mem, tx, s_i, w_i) ENABLE_WORD ? word_print(mem, tx, s_i, w_i) : NULL;
@@ -230,11 +223,6 @@ static void print_mem(shared_mem *mem, transaction_t *tx)
     for (size_t i = 0; i < s; i++)
     {
         segment s = mem->segments[i];
-        if ( atomic_load(&s.free) )
-        {
-            log_debug("segment nb %zu has been freed", i);
-            continue;
-        }
         log_debug("segment nb %zu, segment size: %zu", i, s.size);
         size_t sum = 0;
         size_t count = 0;
@@ -279,23 +267,22 @@ static char as_read_op(access_set_t *as, transaction_t *tx)
         return READ_STATE;
 
     // 1 -> 1 (read, tx) -> (read, tx)
-    else if (atomic_load(as) == read_same_tx)
+    else if (init_state == read_same_tx)
         return READ_STATE;
 
     // 2 -> 2
-    else if (load_state(as) == DOUBLE_READ_STATE)
+    else if (init_state == DOUBLE_READ_STATE)
         return DOUBLE_READ_STATE;
 
     // 1 -> 2 (read, tx) -> (d_read, tx")
-    size_t set = atomic_load(as);
-    if (
-        as_extract_state(set) == READ_STATE &&
-        as_extract_tx(set) != tx->id &&
-        atomic_compare_exchange_strong(as, &set, as_format(tx, DOUBLE_READ_STATE)))
+    else if (
+        as_extract_state(init_state) == READ_STATE &&
+        as_extract_tx(init_state) != tx->id &&
+        atomic_compare_exchange_strong(as, &init_state, as_format(tx, DOUBLE_READ_STATE)))
         return DOUBLE_READ_STATE;
 
     // 3 -> 3 (write, tx) -> (write, tx)
-    else if (set == write_same_tx)
+    else if (init_state == write_same_tx)
         return WRITE_STATE;
 
     // read not allowed - pretend to be in invalid state
@@ -313,7 +300,7 @@ static bool as_write_op(access_set_t *as, transaction_t *tx)
         return true;
 
     // 3 -> 3 (write, tx) -> (write, tx)
-    else if (atomic_load(as) == write_same_tx)
+    else if (init_state == write_same_tx)
         return true;
 
     // 1 -> 3 (read, tx) -> (write, tx)
@@ -366,11 +353,11 @@ static void batcher_enter(batcher *b, transaction_t *tx)
             lock_wait(b->block);
     }
 
-    log_error("[%p, %zu] batch_enter 2 b_id: %zu, first=%u blocked=%u, remaining=%zu", tx, tx->id, b->tx_id, b->first, b->blocked, b->remaining);
-
     b->remaining += 1;
     tx->id = b->tx_id;
     b->tx_id += 1;
+
+    log_error("[%p, %zu] batch_enter 2 b_id: %zu, first=%u blocked=%u, remaining=%zu", tx, tx->id, b->tx_id, b->first, b->blocked, b->remaining);
 
     lock_release(b->block);
 }
@@ -392,7 +379,7 @@ static bool batcher_leave(batcher *b, transaction_t *tx)
     lock_acquire(b->block);
     b->remaining -= 1;
     bool last = b->remaining == 0;
-    if ( tx->read_only )
+    if ( tx->read_only ) // TODO: batcher_block policy
         batcher_block_entry(b);
     log_error("[%p, %zu] batcher_leave id: %zu, remaining=%zu, last=%u", tx, tx->id, b->tx_id, b->remaining, last);
 
@@ -454,7 +441,6 @@ static bool segment_alloc(shared_mem *mem, size_t size)
     segment seg;
 
     seg.size = size;
-    seg.free = false;
     seg.index = atomic_load(&mem->allocated_segments);
     seg.access_sets = calloc(size, sizeof(access_set_t));
     seg.writeCopies = calloc(size, mem->align);
@@ -488,23 +474,17 @@ static size_t get_word_index(void const *addr, size_t align)
     return (size_t)WORD_INDEX_ALIGN((uintptr_t)addr, align);
 }
 
-static void segment_set_free(shared_mem *mem, int s_i)
-{
-    log_trace("Setting segment free %u", s_i);
-    atomic_store(&mem->segments[s_i].free, true);
-}
 
 static void segment_free(shared_mem *mem, int s_i)
 {
     segment seg = mem->segments[s_i];
-    log_trace("Freeing segment %u, has been set: %u", s_i, seg.free);
+    log_trace("Freeing segment %u", s_i);
     free(seg.access_sets);
     free(seg.writeCopies);
     free(seg.readCopies);
     seg.access_sets = NULL;
     seg.writeCopies = NULL;
     seg.readCopies = NULL;
-    seg.free = true;
     log_trace("Freed segment %u", s_i);
 }
 
@@ -512,25 +492,30 @@ static void segment_free(shared_mem *mem, int s_i)
 // if more than 2>>16 alloc -> find free segments
 static void abort_fail(shared_mem *mem, transaction_t *tx)
 {
+    lock_acquire(mem->abort_lock);
+    bool failed = vec_append(&mem->abort_words, &tx->modif_words) < 0;
+    lock_release(mem->abort_lock);
+    if (unlikely(failed))
+        return;
+
     size_t a = mem->align;
-    t_vec mod = tx->mod_words;
+    t_vec mod = tx->modif_words;
     void **ptr;
     int s_i;
     size_t w_i;
     segment seg;
     for (size_t i = 0; i < mod.len; i++)
     {
-        ptr = (void **)vec_get(&tx->mod_words, i);
+        ptr = (void **)vec_get(&tx->modif_words, i);
         s_i = get_segment_index(*ptr);
         w_i = get_word_index(*ptr, a);
         seg = mem->segments[s_i];
-        if ( unlikely(seg.free) ) continue;
-        log_debug("[%p, %zu] Reverting idx: %zu, (%u, %zu)", tx, tx->id, i, s_i, w_i);
+        // log_debug("[%p, %zu] Reverting idx: %zu, (%u, %zu)", tx, tx->id, i, s_i, w_i);
         // as_revert(seg.access_sets + w_i, tx);
         _word_print(mem, tx, s_i, w_i);
     }
 
-    leave_and_commit(mem, tx, true);
+    leave_and_commit(mem, tx);
 }
 
 /** Create (i.e. allocate + init) a new shared memory region, with one first non-free-able allocated segment of the requested size and alignment.
@@ -556,32 +541,41 @@ shared_t tm_create(size_t size, size_t align)
     if (unlikely(segment_alloc(mem, size)))
         goto fail_tm_create;
 
-    if (unlikely(vec_new(&mem->modif_read.indices, 0, sizeof(size_t)) < 0))
-        goto fail_modif_read;
+    // if (unlikely(vec_new(&mem->modif_read.indices, 0, sizeof(size_t)) < 0))
+    //     goto fail_modif_read;
 
-    if (unlikely(vec_new(&mem->modif_write.indices, 0, sizeof(size_t)) < 0))
-        goto fail_modif_write;
+    // if (unlikely(vec_new(&mem->modif_write.indices, 0, sizeof(size_t)) < 0))
+    //     goto fail_modif_write;
+    if (unlikely(vec_new(&mem->modif_words, 20, sizeof(size_t)) < 0))
+        goto fail_modif_write; // TODO: correct handler
+
+    if (unlikely(vec_new(&mem->abort_words, 20, sizeof(size_t)) < 0))
+        goto fail_modif_write; // TODO: correct handler
 
     if (unlikely(vec_new(&mem->seg_free, 0, sizeof(int)) < 0))
         goto fail_modif_write; // TODO: correct handler
+    
+    mem->seg_lock = malloc(sizeof(struct lock_t));
+    if (unlikely(mem->seg_lock == NULL || !lock_init(mem->seg_lock)))
+        goto fail_read_lock; // TODO: correct handler
 
-    mem->modif_read.lock = malloc(sizeof(struct lock_t));
-    if (unlikely(mem->modif_read.lock == NULL || !lock_init(mem->modif_read.lock)))
-        goto fail_read_lock;
+    mem->modif_lock = malloc(sizeof(struct lock_t));
+    if (unlikely(mem->modif_lock == NULL || !lock_init(mem->modif_lock)))
+        goto fail_read_lock; // TODO: correct handler
 
-    mem->modif_write.lock = malloc(sizeof(struct lock_t));
-    if (unlikely(mem->modif_write.lock == NULL || !lock_init(mem->modif_write.lock)))
-        goto fail_write_lock;
+    mem->abort_lock = malloc(sizeof(struct lock_t));
+    if (unlikely(mem->abort_lock == NULL || !lock_init(mem->abort_lock)))
+        goto fail_write_lock; // TODO: correct handler
 
     return mem;
 
 fail_write_lock:
-    lock_cleanup(mem->modif_read.lock);
-    free(mem->modif_read.lock);
+    // lock_cleanup(mem->modif_read.lock);
+    // free(mem->modif_read.lock);
 fail_read_lock:
-    vec_free(&mem->modif_write.indices);
+    // vec_free(&mem->modif_write.indices);
 fail_modif_write:
-    vec_free(&mem->modif_read.indices);
+    // vec_free(&mem->modif_read.indices);
 fail_modif_read:
     segment_free(mem, mem->allocated_segments - 1);
 fail_tm_create:
@@ -605,14 +599,13 @@ void tm_destroy(shared_t shared)
     for (int i = 0; i < nb; i++)
         segment_free(mem, (size_t)i);
 
-    // TODO: generalize this
-    lock_cleanup(mem->modif_read.lock);
-    lock_cleanup(mem->modif_write.lock);
-    vec_free(&mem->modif_read.indices);
-    vec_free(&mem->modif_write.indices);
-    free(mem->modif_read.lock);
-    free(mem->modif_write.lock);
+    lock_cleanup(mem->modif_lock);
+    lock_cleanup(mem->abort_lock);
 
+    free(mem->modif_lock);
+    free(mem->abort_lock);
+
+    vec_free(&mem->modif_words);
     vec_free(&mem->seg_free);
 
     mem->allocated_segments = 0;
@@ -666,7 +659,7 @@ tx_t tm_begin(shared_t shared, bool is_ro)
     tx->id = 0;
 
     size_t init_size = is_ro ? 1024 : 2;
-    if (unlikely(vec_new(&tx->mod_words, init_size, sizeof(size_t)) < 0))
+    if (unlikely(vec_new(&tx->modif_words, init_size, sizeof(size_t)) < 0))
         goto fail_mod;
 
     if (unlikely(vec_new(&tx->free_segs, 1, sizeof(int)) < 0))
@@ -682,7 +675,7 @@ tx_t tm_begin(shared_t shared, bool is_ro)
 fail_alloc:
     vec_free(&tx->free_segs);
 fail_free:
-    vec_free(&tx->mod_words);
+    vec_free(&tx->modif_words);
 fail_mod:
     free(tx);
     return invalid_tx;
@@ -697,17 +690,16 @@ static void commit(shared_mem *mem, transaction_t *tx)
     size_t w_i;
     segment seg;
     size_t a = mem->align;
-    t_vec mw = mem->modif_write.indices;
-    t_vec mr = mem->modif_read.indices;
+    t_vec mw = mem->modif_words;
+
+    log_info("////// Modif %zu ////// ", mem->modif_words.len)
 
     for (size_t i = 0; i < mw.len; i++)
     {
-        ptr = (void **)vec_get(&mem->modif_write.indices, i);
+        ptr = (void **)vec_get(&mem->modif_words, i);
         s_i = get_segment_index(*ptr);
         w_i = get_word_index(*ptr, a);
         seg = mem->segments[s_i];
-        if (unlikely(seg.free))
-            continue;
         _word_print(mem, tx, s_i, w_i);
 
         if (load_state(seg.access_sets + w_i) == WRITE_STATE)
@@ -716,21 +708,21 @@ static void commit(shared_mem *mem, transaction_t *tx)
         as_reset(seg.access_sets + w_i);
         _word_print(mem, tx, s_i, w_i);
     }
-    vec_clear(&mem->modif_write.indices);
+    vec_clear(&mem->modif_words);
 
-    // reset access set of read words
-    for (size_t i = 0; i < mr.len; i++)
+    log_info("////// Abort %zu ////// ", mem->abort_words.len)
+
+    for (size_t i = 0; i < mem->abort_words.len; i++)
     {
-        ptr = (void **)vec_get(&mem->modif_read.indices, i);
+        ptr = (void **)vec_get(&mem->abort_words, i);
         s_i = get_segment_index(*ptr);
         w_i = get_word_index(*ptr, a);
         seg = mem->segments[s_i];
-        if (unlikely(seg.free))
-            continue;
         _word_print(mem, tx, s_i, w_i);
         as_reset(seg.access_sets + w_i);
+        _word_print(mem, tx, s_i, w_i);
     }
-    vec_clear(&mem->modif_read.indices);
+    vec_clear(&mem->abort_words);
 
     // actual free of the segments
     int *seg_ptr;
@@ -748,25 +740,25 @@ static void commit(shared_mem *mem, transaction_t *tx)
 
 static void tx_free_segments(shared_mem* mem, transaction_t* tx)
 {
+    lock_acquire(mem->seg_lock);
     int *ptr;
     for (size_t i = 0; i < tx->free_segs.len; i++)
     {
         ptr = (int *)vec_get(&tx->free_segs, i);
         log_trace("leave_and_commit, seg to free: %u", *ptr);
-        segment_set_free(mem, *ptr);
+        vec_push(&mem->seg_free, ptr);
     }
+    lock_release(mem->seg_lock);
 } 
 
-static void leave_and_commit(shared_mem *mem, transaction_t *tx, bool is_abort)
-{
+static void leave_and_commit(shared_mem *mem, transaction_t *tx)
+{        
     batcher *b = mem->batcher;
 
     if (batcher_leave(b, tx))
     {
         commit(mem, tx);
         print_mem(mem, tx);
-        if ( !is_abort ) 
-            tx_free_segments(mem, tx);
         batcher_wake_up(mem->batcher);
     }
     else
@@ -774,7 +766,7 @@ static void leave_and_commit(shared_mem *mem, transaction_t *tx, bool is_abort)
 
     vec_free(&tx->free_segs);
     vec_free(&tx->alloc_segs);
-    vec_free(&tx->mod_words);
+    vec_free(&tx->modif_words);
     free(tx);
 }
 
@@ -788,28 +780,34 @@ bool tm_end(shared_t shared, tx_t tx)
     shared_mem *mem = (shared_mem *)shared;
     transaction_t *ts = (transaction_t *)tx;
 
-    log_debug("[%p, %zu] tm_end ", tx, ts->id);
+    log_debug("[%p, %zu] tm_end mem_modif %zu, ts modif %zu", tx, ts->id, mem->modif_words.len, ts->modif_words.len);
 
-    leave_and_commit(mem, ts, false);
+    lock_acquire(mem->modif_lock);
+    bool failed = vec_append(&mem->modif_words, &ts->modif_words) < 0;
+    lock_release(mem->modif_lock);
+    if (unlikely(failed))
+        return false;
+
+    tx_free_segments(mem, ts);
+    leave_and_commit(mem, ts);
 
     return true;
 }
 
 static bool read_word(segment seg, size_t w_i, void *read_to, transaction_t *tx, size_t align)
 {
-    // if ( tx->read_only )
-    //     memcpy(read_to, seg.readCopies + w_i * align, align);
-    // else
-    // {
-    char state = as_read_op(seg.access_sets + w_i, tx);
-    if (state == INVALID_STATE)
-        return true;
-    else if (state == WRITE_STATE)
-        memcpy(read_to, seg.writeCopies + w_i * align, align);
-    else if (state == READ_STATE || state == DOUBLE_READ_STATE)
+    if ( tx->read_only )
         memcpy(read_to, seg.readCopies + w_i * align, align);
-    // }
-
+    else
+    {
+        char state = as_read_op(seg.access_sets + w_i, tx);
+        if (state == INVALID_STATE)
+            return true;
+        else if (state == WRITE_STATE)
+            memcpy(read_to, seg.writeCopies + w_i * align, align);
+        else if (state == READ_STATE || state == DOUBLE_READ_STATE)
+            memcpy(read_to, seg.readCopies + w_i * align, align);
+    }
 
     return false;
 }
@@ -836,21 +834,14 @@ bool tm_read(shared_t shared, tx_t tx, void const *source, size_t size, void *ta
     // if ( s_i == 0 && base_w_i == 0 )
     //     log_set_quiet(false);
 
-    log_info("[%p, %zu] tm_read  (%u, %zu) seg_free: %u", ts, ts->id, s_i, base_w_i, atomic_load(&seg.free));
-
-    if (unlikely(atomic_load(&seg.free)))
-    {
-        log_fatal("[%p, %zu] tm_read  (%u, %zu) fail because of segment freed", ts, ts->id, s_i, base_w_i)
-        abort_fail(mem, ts);
-        return false;
-    }
+    if ( !ts->read_only )
+        log_info("[%p, %zu] tm_read  (%u, %zu)  read_only? %u", ts, ts->id, s_i, base_w_i, ts->read_only);
 
     for (size_t offset = 0; offset < max_offset; offset++)
     {
         size_t w_i = base_w_i + offset;
         if (unlikely(
                 read_word(seg, w_i, target + offset * a, ts, a) ||
-                word_save_read_modif(mem, source) ||
                 tx_mod_word(ts, source)))
         {
             log_fatal("[%zu] read failed, (%u, %zu)", ts->id, s_i, w_i);
@@ -858,7 +849,8 @@ bool tm_read(shared_t shared, tx_t tx, void const *source, size_t size, void *ta
             return false;
         }
 
-        _word_print(mem, ts, s_i, w_i);
+        if ( !ts->read_only )
+            _word_print(mem, ts, s_i, w_i);
     }
 
     // if ( s_i == 0 && base_w_i == 0 )
@@ -902,19 +894,11 @@ bool tm_write(shared_t shared, tx_t tx, void const *source, size_t size, void *t
 
     log_info("[%p, %zu] tm_write  target=(%u, %zu), writing=%zu, size: %zu", ts, ts->id, s_i, base_w_i, *((size_t *)(source)), size);
 
-    if (unlikely(atomic_load(&seg.free)))
-    {
-        log_fatal("[%p, %zu] tm_write  (%u, %zu) fail because of segment freed", ts, ts->id, s_i, base_w_i)
-        abort_fail(mem, ts);
-        return false;
-    }
-
     for (size_t offset = 0; offset < max_offset; offset++)
     {
         size_t w_i = base_w_i + offset;
         if (unlikely(
                 write_word(seg, w_i, source + offset * a, ts, a) ||
-                word_save_write_modif(mem, target) ||
                 tx_mod_word(ts, target)))
         {
             log_fatal("[%zu] write failed (%u, %zu)", ts->id, s_i, w_i);
@@ -985,24 +969,8 @@ bool tm_free(shared_t shared, tx_t tx, void *target)
 
 static bool tx_mod_word(transaction_t *tx, void *addr)
 {
+    if ( tx->read_only ) return false;
+
     size_t *s = (size_t *)addr;
-    return vec_push(&tx->mod_words, &s) < 0;
-}
-
-static bool word_save_read_modif(shared_mem *mem, void const *source)
-{
-    lock_acquire(mem->modif_read.lock);
-    size_t *s = (size_t *)source;
-    int err = vec_push(&mem->modif_read.indices, &s);
-    lock_release(mem->modif_read.lock);
-    return err < 0;
-}
-
-static bool word_save_write_modif(shared_mem *mem, void *target)
-{
-    lock_acquire(mem->modif_write.lock);
-    size_t *s = (size_t *)target;
-    int err = vec_push(&mem->modif_write.indices, &s);
-    lock_release(mem->modif_write.lock);
-    return err < 0;
+    return vec_push(&tx->modif_words, &s) < 0;
 }

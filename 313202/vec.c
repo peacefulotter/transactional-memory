@@ -1,4 +1,5 @@
 #include "vec.h"
+#include "logger.h"
 
 int vec_new(t_vec *dst, size_t init_len, size_t elem_size)
 {
@@ -173,12 +174,13 @@ int vec_append(t_vec *dst, t_vec *src)
 	else if (!dst->memory)
 		vec_new(dst, 1, dst->elem_size);
 	alloc_size = dst->len * dst->elem_size + src->len * src->elem_size;
+	log_warn("dst_len=%zu, src_len=%zu, dst_alloc=%zu, alloc_size=%zu", dst->len, src->len, dst->alloc_size, alloc_size);
 	if (dst->alloc_size < alloc_size)
 	{
-		if (dst->alloc_size * 2 < dst->len * alloc_size)
-			ret = vec_resize(dst, alloc_size);
-		else
-			ret = vec_resize(dst, dst->alloc_size * 2);
+		// if (dst->alloc_size * 2 < dst->len * alloc_size)
+		ret = vec_resize(dst, alloc_size / dst->elem_size);
+		// else
+		// 	ret = vec_resize(dst, dst->alloc_size * 2);
 		if (ret < 0)
 			return (-1);
 	}
